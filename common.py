@@ -20,7 +20,7 @@ def make_epsilon_greedy_policy(Q, epsilon, nA):
         nA (int): Number of actions in the environment.
     
     Returns:
-        a action either 
+        A closure that takes a observation and returns with probability:
             1 - epsilon: action with highest state-action value
             epsilon: random action
     """
@@ -55,9 +55,12 @@ class AgentCommController:
         """
         self.learners[identifier].append(learner)
 
-    def reset(self, identifier):
+    def reset(self, identifier, info=None):
         for learner in self.learners[identifier]:
-            learner.reset()
+            if info is not None:
+                learner.reset(info)
+            else:
+                learner.reset()
 
 class MLP(nn.Module):
     """Multi Layer Perceptron

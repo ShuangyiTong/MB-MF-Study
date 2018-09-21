@@ -14,6 +14,10 @@ class MDP(gym.Env):
     Although there is not much code in gym.Env, it is just
     showing we want to support general gym API, to be able
     to easily run different environment with existing code in the future
+
+    The MDP implemented here support arbitrary stages and arbitrary
+    possible actions at any state, but each state share the same number of
+    possible actions. So the decision tree is an n-tree
     """
 
     """MDP constants
@@ -31,18 +35,17 @@ class MDP(gym.Env):
 
     """Control Agent Action Space
     0 - doing nothing
-    1 - iecrease bias by 1
-    2 - dncrease bias by 1
+    1 - increase bias by 1
+    2 - decrease bias by 1
     3 - more deterministic: increase variance of trans_prob
     4 - more stochastic: decrease variance of trans_prob
-    5 - reset human agent model-free learner
-    6 - reset human agent model-based learner
+    5 - reset environment
     """
     NUM_CONTROL_ACTION    = 6
-    BIAS_ADJUSTMENT_VALUE = 1
+    BIAS_ADJUSTMENT_VALUE = 5
 
     def __init__(self, stages=STAGES, trans_prob=TRANSITON_PROBABILITY, num_actions=NUM_ACTIONS,
-                 outputs=POSSIBLE_OUTPUTS, bias=0, random_out=True):
+                 outputs=POSSIBLE_OUTPUTS, bias=0):
         """
         Args:
             stages (int): stages of the MDP
@@ -52,7 +55,6 @@ class MDP(gym.Env):
                 by the size of trans_prob
             outputs (list): an array specifying possible outputs
             bias (float): bias added to the final reward
-            random_out (boolean): if outputs positions are randomized
         """
         # environment global variables
         self.stages            = stages
@@ -65,16 +67,12 @@ class MDP(gym.Env):
         self.possible_actions  = len(self.trans_prob) * num_actions
         self.outputs           = outputs # type of outputs
         self.num_output_states = pow(self.possible_actions, self.stages)
-        if random_out:
-            self.output_states = choice(outputs, self.num_output_states)
-        else:
-            output_to_states_ratio = int(self.num_output_states / len(self.outputs))
-            assert output_to_states_ratio * len(self.outputs) == self.num_output_states
-            self.output_states = self.outputs * output_to_states_ratio # repeat outputs
+        self.output_states = choice(outputs, self.num_output_states)
         self.output_states_offset = int((pow(self.possible_actions, self.stages) - 1)
             / (self.possible_actions - 1)) # geometric series summation
         self.num_states        = self.output_states_offset + len(self.outputs)
         self.observation_space = [spaces.Discrete(self.num_states)] # human agent can see states only
+        self.state_reward_func = self._make_state_reward_func()
 
         # control agent variables
         self.action_space.append(spaces.Discrete(MDP.NUM_CONTROL_ACTION)) # control agent action space
@@ -90,6 +88,10 @@ class MDP(gym.Env):
 
         # agent communication controller
         self.agent_comm_controller = AgentCommController()
+
+    def _make_state_reward_func(self):
+        return lambda s: self.output_states[s - self.output_states_offset] \
+               if s >= self.output_states_offset else 0
 
     def _make_control_observation(self):
         target_state     = np.array([self.human_state]).reshape(-1)
@@ -124,31 +126,40 @@ class MDP(gym.Env):
             state = self.human_state * self.possible_actions + \
                     choice(range(action[1] * len(self.trans_prob) + 1, (action[1] + 1) * len(self.trans_prob) + 1),
                            1, True, self.trans_prob)[0]
+            reward = self.state_reward_func(state)
             if state < self.output_states_offset:
                 done = False
-                reward = 0
                 self.human_state = state
             else:
                 done = True
-                reward = self.output_states[state - self.output_states_offset]
                 self.human_state = self.output_states_offset + self.outputs.index(reward)
-            return self.human_state, reward, done, self._make_control_observation()
+            return self.human_state, reward + self.bias, done, self._make_control_observation()
         elif action[0] == MDP.CONTROL_AGENT_INDEX:
             """ Control action
             Integrate functional and object oriented programming techniques
             to create this pythonic, compact code, similar to switch in other language
             """
-            [lambda obj: obj, # do nothing
-             lambda obj: setattr(obj, 'bias', obj.bias + MDP.BIAS_ADJUSTMENT_VALUE), # increase bias
-             lambda obj: setattr(obj, 'bias', obj.bias - MDP.BIAS_ADJUSTMENT_VALUE), # decrease bias
-             lambda obj: setattr(obj, 'trans_prob', [1./len(obj.trans_prob) for i in range(len(obj.trans_prob))]), # uniform trans_prob
-             lambda obj: setattr(obj, 'trans_prob', obj.trans_prob_reset), # reset original trans_prob
-             lambda obj: obj.agent_comm_controller.reset('model-free'), # reset model free learner
-             lambda obj: obj.agent_comm_controller.reset('model-based') # reset model based learner
+            [lambda env: env, # do nothing
+             lambda env: setattr(env, 'bias', env.bias + MDP.BIAS_ADJUSTMENT_VALUE), # increase bias
+             lambda env: setattr(env, 'bias', env.bias - MDP.BIAS_ADJUSTMENT_VALUE), # decrease bias
+             lambda env: setattr(env, 'trans_prob', [1./len(env.trans_prob) for i in range(len(env.trans_prob))]), # uniform trans_prob
+             lambda env: setattr(env, 'trans_prob', env.trans_prob_reset), # reset original trans_prob
+             lambda env: env._param_reset()
             ][action[1]](self)
             return None, None, None, None
         else:
             raise ValueError
+
+    def _param_reset(self):
+        """Reset parameters, used as an action in control agent space
+        """
+        self.trans_prob  = self.trans_prob_reset
+        self.bias        = self.bias_reset
+        self.output_states = choice(self.outputs, self.num_output_states)
+        # refresh the closure as well
+        self.state_reward_func = self._make_state_reward_func()
+        # reset human agent
+        self.agent_comm_controller.reset('model-based', self.state_reward_func)
         
     def reset(self):
         """Reset the environment before game start or after game terminates
@@ -158,5 +169,4 @@ class MDP(gym.Env):
             control_obs_frag (numpy.array): control agent observation fragment, see step
         """
         self.human_state = 0
-        self.trans_prob  = self.trans_prob_reset
         return self.human_state, self._make_control_observation()

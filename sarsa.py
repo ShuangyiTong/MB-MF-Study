@@ -5,20 +5,22 @@ import numpy as np
 import common
 
 from collections import defaultdict
+from gym import spaces
 
 class SARSA:
     """SARSA model-free learner
     
     Currently support any observation space, but action can only be Discrete
     """
-    def __init__(self, num_actions, epsilon=0.05, learning_rate=0.2, discount_factor=1):
+    def __init__(self, action_space, epsilon=0.05, learning_rate=0.2, discount_factor=1):
         """Args:
-            num_actions (int): size of action space in each states. differentiate
-            size of action space by states may support later
+            action_space (gym.spaces.Discrete)
             epsilon (float): thereshold to make a random action
+            learning_rate (float)
+            discount_factor (float)
         """
-        self.epsilon   = epsilon
-        self.num_actions     = num_actions
+        self.epsilon         = epsilon
+        self.num_actions     = action_space.n # assume action space is spaces.Discrete
         self.discount_factor = discount_factor
         self.learning_rate   = learning_rate
         self.reset()

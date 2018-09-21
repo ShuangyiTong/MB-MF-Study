@@ -72,8 +72,9 @@ class DoubleDQN:
         """Update memory based on given data
         Train the model if memory capacity reach batch size
         """
-        self.replay_memory.add_event(Memory.Event(obs, action, next_obs, reward))
-        if self.batch_size >= self.replay_memory.capacity:
+        self.replay_memory.add_event(Memory.Event(obs.copy(), action, next_obs.copy(), reward))
+        #print('action:', action, 'reward:', reward)
+        if self.batch_size <= len(self.replay_memory.mem):
             if self.tau == self.tau_offset:
                 self.tau_offset = 0
                 self.target_Q.load_state_dict(self.eval_Q.state_dict())
@@ -83,6 +84,7 @@ class DoubleDQN:
 
             # calculate the estimated value
             estimated_value = self.eval_Q(Variable(self.Tensor(mini_batch.state)))
+            #print(self.eval_Q(Variable(self.Tensor(obs))))
             # select the value associated with the action taken
             estimated_value = estimated_value.gather(1, 
                 Variable(self.LongTensor(mini_batch.action).unsqueeze_(1))) # Q(S_t, A_t; theta_t)
@@ -94,7 +96,7 @@ class DoubleDQN:
             # calculate target network value
             target_value = self.target_Q(Variable(self.Tensor([
                 next_state for next_state in mini_batch.next_state if next_state is not None])))
-            target_value = target_value.gather(1, argmax_action) # Q(S_{t+1}, argmax_a Q(S_{t+1}, a; theta_t); theta_t^-)
+            target_value = target_value.gather(1, Variable(argmax_action.unsqueeze_(1))) # Q(S_{t+1}, argmax_a Q(S_{t+1}, a; theta_t); theta_t^-)
             target_value += Variable(self.Tensor(mini_batch.reward).unsqueeze_(1)) # R_{t+1}
 
             # compute the loss between estimated value and target value
