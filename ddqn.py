@@ -73,7 +73,6 @@ class DoubleDQN:
         Train the model if memory capacity reach batch size
         """
         self.replay_memory.add_event(Memory.Event(obs.copy(), action, next_obs.copy(), reward))
-        #print('action:', action, 'reward:', reward)
         if self.batch_size <= len(self.replay_memory.mem):
             if self.tau == self.tau_offset:
                 self.tau_offset = 0
@@ -84,7 +83,6 @@ class DoubleDQN:
 
             # calculate the estimated value
             estimated_value = self.eval_Q(Variable(self.Tensor(mini_batch.state)))
-            #print(self.eval_Q(Variable(self.Tensor(obs))))
             # select the value associated with the action taken
             estimated_value = estimated_value.gather(1, 
                 Variable(self.LongTensor(mini_batch.action).unsqueeze_(1))) # Q(S_t, A_t; theta_t)

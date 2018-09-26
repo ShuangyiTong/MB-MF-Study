@@ -11,8 +11,11 @@ class FORWARD:
 
     Currently support Discreate observation and action spaces only
     """
+    RANDOM_PROBABILITY       = 0.5
+    TEMPORAL_DISCOUNT_FACTOR = 1.0
+    LEARNING_RATE            = 0.5
     def __init__(self, observation_space, action_space, state_reward_func, output_offset,
-                 epsilon=0.05, discount_factor=1.0, learning_rate=0.5):
+                 epsilon=RANDOM_PROBABILITY, discount_factor=TEMPORAL_DISCOUNT_FACTOR, learning_rate=LEARNING_RATE):
         """Args:
             observation_space (gym.spaces.Discrete)
             action_space (gym.spaces.Discrete)

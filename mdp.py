@@ -29,7 +29,7 @@ class MDP(gym.Env):
     CONTROL_AGENT_INDEX = 1
 
     STAGES                = 2
-    TRANSITON_PROBABILITY = [0.9, 0.1]
+    TRANSITON_PROBABILITY = [0.95, 0.05]
     NUM_ACTIONS           = 2
     POSSIBLE_OUTPUTS      = [0, 10, 20, 40]
 

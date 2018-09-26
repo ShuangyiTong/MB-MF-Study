@@ -12,7 +12,11 @@ class SARSA:
     
     Currently support any observation space, but action can only be Discrete
     """
-    def __init__(self, action_space, epsilon=0.05, learning_rate=0.2, discount_factor=1):
+    RANDOM_PROBABILITY       = 0.05
+    LEARNING_RATE            = 0.2
+    TEMPORAL_DISCOUNT_FACTOR = 1
+    def __init__(self, action_space, epsilon=RANDOM_PROBABILITY, learning_rate=LEARNING_RATE,
+                 discount_factor=TEMPORAL_DISCOUNT_FACTOR):
         """Args:
             action_space (gym.spaces.Discrete)
             epsilon (float): thereshold to make a random action
