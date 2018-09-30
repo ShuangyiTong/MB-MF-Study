@@ -72,8 +72,8 @@ class MLP(nn.Module):
         """
         super(MLP, self).__init__() # call parent constructor
         # two fully connected layers
-        self.fc1 = nn.Linear(input_size, 10)
-        self.fc2 = nn.Linear(10, output_size)
+        self.fc1 = nn.Linear(input_size, 64)
+        self.fc2 = nn.Linear(64, output_size)
         
         # parameters initialization
         nn.init.xavier_normal_(self.fc1.weight)

@@ -9,6 +9,10 @@ from gym import spaces
 
 class SARSA:
     """SARSA model-free learner
+
+    See the algorithm description from the publication:
+    States versus Rewards: Dissociable Neural Prediction Error Signals Underlying Model-Based
+    and Model-Free Reinforcement Learning http://www.princeton.edu/~ndaw/gddo10.pdf
     
     Currently support any observation space, but action can only be Discrete
     """
@@ -36,9 +40,21 @@ class SARSA:
             state (any): a state valid in the observation space
         
         Returns:
-            action (int): a action in a discrete action space
+            action (int): an action in a discrete action space
         """
         return self.policy_fn(state)
+    
+    def get_Q_values(self, state):
+        """Return an array of Q values in given state, usually needed by arbitrator
+        algorithm to choose an action given information from multiple RL agents
+
+        Args:
+            state (any): a state valid in the observation space
+        
+        Returns:
+            Q_values (list): a list of Q values with indices corresponds to specific action
+        """
+        return self.Q_sarsa[state]
 
     def _get_rpe(self, reward, action_taken, next_action, state, next_state):
         return reward + self.discount_factor * self.Q_sarsa[next_state][next_action] \

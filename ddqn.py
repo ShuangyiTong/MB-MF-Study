@@ -14,6 +14,12 @@ from common import MLP, Memory
 from functools import reduce
 
 class DoubleDQN:
+    """Double DQN model
+
+    Paramters naming and natation are followed from the original paper:
+    Deep Reinforcement Learning with Double Q-learning (2015)
+    https://arxiv.org/abs/1509.06461
+    """
     def __init__(self, observation_space, action_space, use_cuda=False, batch_size=32, 
                  gamma=0.9, tau=50, memory_capacity=1000):
         """Initialize model parameters and training progress variables

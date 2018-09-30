@@ -35,14 +35,11 @@ class MDP(gym.Env):
 
     """Control Agent Action Space
     0 - doing nothing
-    1 - increase bias by 1
-    2 - decrease bias by 1
-    3 - more deterministic: increase variance of trans_prob
-    4 - more stochastic: decrease variance of trans_prob
-    5 - reset environment
+    1 - more deterministic: increase variance of trans_prob
+    2 - more stochastic: decrease variance of trans_prob
+    3 - reset environment
     """
-    NUM_CONTROL_ACTION    = 6
-    BIAS_ADJUSTMENT_VALUE = 5
+    NUM_CONTROL_ACTION    = 4
 
     def __init__(self, stages=STAGES, trans_prob=TRANSITON_PROBABILITY, num_actions=NUM_ACTIONS,
                  outputs=POSSIBLE_OUTPUTS, bias=0):
@@ -140,8 +137,6 @@ class MDP(gym.Env):
             to create this pythonic, compact code, similar to switch in other language
             """
             [lambda env: env, # do nothing
-             lambda env: setattr(env, 'bias', env.bias + MDP.BIAS_ADJUSTMENT_VALUE), # increase bias
-             lambda env: setattr(env, 'bias', env.bias - MDP.BIAS_ADJUSTMENT_VALUE), # decrease bias
              lambda env: setattr(env, 'trans_prob', [1./len(env.trans_prob) for i in range(len(env.trans_prob))]), # uniform trans_prob
              lambda env: setattr(env, 'trans_prob', env.trans_prob_reset), # reset original trans_prob
              lambda env: env._param_reset()

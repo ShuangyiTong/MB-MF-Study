@@ -9,6 +9,10 @@ from collections import defaultdict
 class FORWARD:
     """FORWARD model-based learner
 
+    See the algorithm description from the publication:
+    States versus Rewards: Dissociable Neural Prediction Error Signals Underlying Model-Based
+    and Model-Free Reinforcement Learning http://www.princeton.edu/~ndaw/gddo10.pdf
+
     Currently support Discreate observation and action spaces only
     """
     RANDOM_PROBABILITY       = 0.5
@@ -39,7 +43,7 @@ class FORWARD:
         Return:
             policy_fn (closure)
         """
-        Q_fwd = defaultdict(lambda: np.zeros(self.num_actions))
+        self.Q_fwd = defaultdict(lambda: np.zeros(self.num_actions))
         for state in reversed(range(self.num_states)):
             # Do a one-step lookahead to find the best action
             for action in range(self.num_actions):
@@ -47,15 +51,26 @@ class FORWARD:
                     prob, reward = self.T[state][action][next_state]
                     if state >= self.output_offset: # terminal reward states at the bottom of the tree
                         reward = 0
-                    best_action_value = np.max(Q_fwd[next_state])
-                    Q_fwd[state][action] += prob * (reward + self.discount_factor * best_action_value)
+                    best_action_value = np.max(self.Q_fwd[next_state])
+                    self.Q_fwd[state][action] += prob * (reward + self.discount_factor * best_action_value)
 
         # Create a deterministic policy using the optimal value function
-        self.policy_fn = common.make_epsilon_greedy_policy(Q_fwd, self.epsilon, self.num_actions)
+        self.policy_fn = common.make_epsilon_greedy_policy(self.Q_fwd, self.epsilon, self.num_actions)
         return self.policy_fn
 
     def action(self, state):
         return self.policy_fn(state)
+
+    def get_Q_values(self, state):
+        """Required by some arbitrition processes
+
+        Args:
+            state (int): a discrete value representing the state
+        
+        Return:
+            Q_values (list): a list of Q values with indices corresponds to specific action
+        """
+        return self.Q_fwd[state]
 
     def optimize(self, state, action, next_state):
         """Optimize state transition matrix
