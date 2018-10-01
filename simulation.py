@@ -2,8 +2,6 @@
     Sept 17, 2018
 """
 import torch
-import getopt
-import sys
 import numpy as np
 
 from mdp import MDP
@@ -12,19 +10,10 @@ from sarsa import SARSA
 from forward import FORWARD
 from arbitrator import BayesRelEstimator, AssocRelEstimator, Arbitrator
 
-usage_str = """
-Model-free, model-based learning simulation
-
-Usage:
-    --mdp-stages [MDP environment stages]         Specify how many stages in MDP environment
-    --ctrl-mode <min-spe/max-spe/min-rpe/max-rpe> Choose control agent mode
-    --disable-ctrl                                Disable control agents
-"""
-
 # preset constants
 MDP_STAGES           = 2
 TOTAL_EPISODES       = 1000
-TRIALS_PER_SESSION   = 80
+TRIALS_PER_SESSION   = 8
 SPE_LOW_THRESHOLD    = 0.1
 SPE_HIGH_THRESHOLD   = 0.5
 RPE_LOW_THRESHOLD    = 5
@@ -70,11 +59,9 @@ def compute_human_action(arbitrator, human_obs, model_free, model_based):
     return arbitrator.action(model_free.get_Q_values(human_obs),
                              model_based.get_Q_values(human_obs))
 
-def usage():
-    print(usage_str)
-
-def simulation(threshold, estimator_learning_rate, amp_mb_to_mf, amp_mf_to_mb,
-               temperature, rl_learning_rate):
+def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=AssocRelEstimator.LEARNING_RATE,
+               amp_mb_to_mf=Arbitrator.AMPLITUDE_MB_TO_MF, amp_mf_to_mb=Arbitrator.AMPLITUDE_MF_TO_MB,
+               temperature=Arbitrator.SOFTMAX_TEMPERATURE, rl_learning_rate=SARSA.LEARNING_RATE):
     env     = MDP(MDP_STAGES)
     ddqn    = DoubleDQN(env.observation_space[MDP.CONTROL_AGENT_INDEX],
                         env.action_space[MDP.CONTROL_AGENT_INDEX],
@@ -82,17 +69,19 @@ def simulation(threshold, estimator_learning_rate, amp_mb_to_mf, amp_mf_to_mb,
     sarsa   = SARSA(env.action_space[MDP.HUMAN_AGENT_INDEX], SARSA.RANDOM_PROBABILITY, rl_learning_rate) # SARSA model-free learner
     forward = FORWARD(env.observation_space[MDP.HUMAN_AGENT_INDEX],
                       env.action_space[MDP.HUMAN_AGENT_INDEX],
-                      env.state_reward_func, env.output_states_offset,
-                      FORWARD.TEMPORAL_DISCOUNT_FACTOR, rl_learning_rate)
+                      env.state_reward_func, env.output_states_offset, FORWARD.RANDOM_PROBABILITY,
+                      FORWARD.TEMPORAL_DISCOUNT_FACTOR, rl_learning_rate) # forward model-based learner
     arb     = Arbitrator(AssocRelEstimator(estimator_learning_rate, MDP.POSSIBLE_OUTPUTS[-1]),
-                         BayesRelEstimator(BayesRelEstimator.MEMORY_SIZE, threshold), amp_mb_to_mf,
-                         amp_mf_to_mb, temperature)
+                         BayesRelEstimator(BayesRelEstimator.MEMORY_SIZE, BayesRelEstimator.CATEGORIES, threshold),
+                         amp_mb_to_mf, amp_mf_to_mb, temperature)
 
     # register in the communication controller
     env.agent_comm_controller.register('model-based', forward)
 
     for episode in range(TOTAL_EPISODES):
-        p_mb = 0
+        cumulative_p_mb = 0
+        cum_mf_rel      = 0
+        cum_mb_rel      = 0
         for trials in range(TRIALS_PER_SESSION):
             game_ternimate = False
             human_obs, control_obs_frag = env.reset()
@@ -102,7 +91,8 @@ def simulation(threshold, estimator_learning_rate, amp_mb_to_mf, amp_mf_to_mb,
                 control_action = ddqn.action(control_obs)
 
                 """control act on environment"""
-                # _, _, _, _ = env.step([MDP.CONTROL_AGENT_INDEX, control_action])
+                if CTRL_AGENTS_ENABLED:
+                    _, _, _, _ = env.step([MDP.CONTROL_AGENT_INDEX, control_action])
                 
                 """human choose action"""
                 human_action = compute_human_action(arb, human_obs, sarsa, forward)
@@ -116,7 +106,10 @@ def simulation(threshold, estimator_learning_rate, amp_mb_to_mf, amp_mf_to_mb,
                 next_human_action = compute_human_action(arb, next_human_obs, sarsa, forward) # required by models like SARSA
                 rpe = sarsa.optimize(human_reward, human_action, 
                                      next_human_action, human_obs, next_human_obs)
-                p_mb += arb.add_pe(rpe, spe)
+                mf_rel, mb_rel, p_mb = arb.add_pe(rpe, spe)
+                cumulative_p_mb += p_mb
+                cum_mf_rel += mf_rel
+                cum_mb_rel += mb_rel
 
                 """update control agent"""
                 next_control_obs = np.append(next_control_obs_frag, human_reward)
@@ -125,26 +118,6 @@ def simulation(threshold, estimator_learning_rate, amp_mb_to_mf, amp_mf_to_mb,
                 """iterators update"""
                 control_obs = next_control_obs
                 human_obs   = next_human_obs
-        print("p_mb avg: ", (p_mb / (TRIALS_PER_SESSION * MDP_STAGES)))
-
-if __name__ == '__main__':
-    short_opt = "h"
-    long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode="]
-    try:
-        opts, args = getopt.getopt(sys.argv[1:], short_opt, long_opt)
-    except getopt.GetoptError as err:
-        print(err)
-        usage()
-        sys.exit(2)
-    for o, a in opts:
-        if o == "--disable-control":
-            CTRL_AGENTS_ENABLED = False
-        elif o in ("-h", "--help"):
-            usage()
-            sys.exit()
-        elif o == "--mdp-stages":
-            MDP_STAGES = int(a)
-        elif o == "--ctrl-mode":
-            CONTROL_MODE = a
-        else:
-            assert False, "unhandled option"
+        print("p_mb avg: ", (cumulative_p_mb / (TRIALS_PER_SESSION * MDP_STAGES)), end='    ')
+        print("mf_rel: ", (cum_mf_rel / (TRIALS_PER_SESSION * MDP_STAGES)), end='   ')
+        print("mb_rel: ", (cum_mb_rel / (TRIALS_PER_SESSION * MDP_STAGES)))

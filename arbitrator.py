@@ -4,7 +4,7 @@
 
 import numpy as np
 
-from math import log10, exp
+from math import log, exp
 from collections import deque
 from random import random
 
@@ -18,7 +18,7 @@ http://dx.doi.org/10.1016/j.neuron.2013.11.028
 class BayesRelEstimator:
     """Bayesian Reliability Estimation Class
     """
-    MEMORY_SIZE     = 10
+    MEMORY_SIZE     = 1000
     CATEGORIES      = 3
     THRESHOLD       = 0.3
     TARGET_CATEGORY = 0
@@ -85,7 +85,9 @@ class BayesRelEstimator:
 class AssocRelEstimator:
     """Pearce-Hall Associability Reliability Estimation Class
     """
-    def __init__(self, learning_rate, pe_max):
+    LEARNING_RATE = 0.2
+    MAX_PE        = 40
+    def __init__(self, learning_rate=LEARNING_RATE, pe_max=MAX_PE):
         self.chi           = 0
         self.learning_rate = learning_rate
         self.pe_max        = pe_max
@@ -113,24 +115,26 @@ class Arbitrator:
                  amp_mb_to_mf=AMPLITUDE_MB_TO_MF, temperature=SOFTMAX_TEMPERATURE, p_mb=P_MB,
                  max_trans_rate_mf_to_mb=MAX_TRANSITION_RATE_MF_TO_MB, max_trans_rate_mb_to_mf=MAX_TRANSITION_RATE_MB_TO_MF,
                  mf_to_mb_bound=MF_TO_MB_BOUNDARY_CONDITION, mb_to_mf_bound=MB_TO_MF_BOUNDARY_CONDITION):
-        self.mf_rel_estimator = mf_rel_estimator if mf_rel_estimator is not None else AssocRelEstimator(0.2, 40)
+        self.mf_rel_estimator = mf_rel_estimator if mf_rel_estimator is not None else AssocRelEstimator()
         self.mb_rel_estimator = mb_rel_estimator if mb_rel_estimator is not None else BayesRelEstimator()
         self.A_alpha          = max_trans_rate_mf_to_mb
         self.A_beta           = max_trans_rate_mb_to_mf
-        self.B_alpha          = log10((1 / mf_to_mb_bound) * self.A_alpha - 1)
-        self.B_beta           = log10((1 / mb_to_mf_bound) * self.A_beta - 1)
+        self.B_alpha          = log((1 / mf_to_mb_bound) * self.A_alpha - 1)
+        self.B_beta           = log((1 / mb_to_mf_bound) * self.A_beta - 1)
         self.p_mb             = p_mb
         self.p_mf             = self.p_mb
+        self.amp_mb_to_mf     = amp_mb_to_mf
+        self.amp_mf_to_mb     = amp_mf_to_mb
         self.temperature      = temperature
 
     def add_pe(self, rpe, spe):
         chi_mf = self.mf_rel_estimator.add_pe(rpe) # reliability of model free 
         chi_mb = self.mb_rel_estimator.add_pe(spe) # reliability of model based
         alpha  = self.A_alpha / (1 + exp(self.B_alpha * chi_mf)) # transition rate MF->MB
+        # alpha *= self.amp_mf_to_mb # multiply by amplitude
         beta   = self.A_beta  / (1 + exp(self.B_beta * chi_mb)) # transition rate MB->MF
-        tau    = 1 / (alpha + beta)
-        p_mb_inf = alpha * tau
-        self.p_mb = p_mb_inf + (-1 / tau) * (self.p_mb - p_mb_inf)
+        # beta  *= self.amp_mb_to_mf
+        self.p_mb += alpha * (1 - self.p_mb) - beta * self.p_mb
         self.p_mf = 1 - self.p_mb
         return chi_mf, chi_mb, self.p_mb
 
