@@ -4,31 +4,42 @@
 import torch
 import numpy as np
 
+from tqdm import tqdm
 from mdp import MDP
 from ddqn import DoubleDQN
 from sarsa import SARSA
 from forward import FORWARD
 from arbitrator import BayesRelEstimator, AssocRelEstimator, Arbitrator
+from analysis import gData
 
 # preset constants
-MDP_STAGES           = 2
-TOTAL_EPISODES       = 1000
-TRIALS_PER_SESSION   = 8
-SPE_LOW_THRESHOLD    = 0.1
-SPE_HIGH_THRESHOLD   = 0.5
-RPE_LOW_THRESHOLD    = 5
-RPE_HIGH_THRESHOLD   = 20
-CONTROL_REWARD       = 2
-CONTROL_REWARD_BIAS  = -10
-DEFAULT_CONTROL_MODE = 'max-spe'
-CONTROL_MODE         = DEFAULT_CONTROL_MODE
-CTRL_AGENTS_ENABLED  = True
+MDP_STAGES            = 2
+TOTAL_EPISODES        = 1000
+TRIALS_PER_SESSION    = 80
+SPE_LOW_THRESHOLD     = 0.1
+SPE_HIGH_THRESHOLD    = 0.5
+RPE_LOW_THRESHOLD     = 5
+RPE_HIGH_THRESHOLD    = 20
+MF_REL_HIGH_THRESHOLD = 0.8
+MF_REL_LOW_THRESHOLD  = 0.5
+MB_REL_HIGH_THRESHOLD = 0.7
+MB_REL_LOW_THRESHOLD  = 0.3
+CONTROL_REWARD        = 20
+CONTROL_REWARD_BIAS   = -10
+DEFAULT_CONTROL_MODE  = 'max-spe'
+CONTROL_MODE          = DEFAULT_CONTROL_MODE
+CTRL_AGENTS_ENABLED   = True
 
 error_reward_map = {
-    'min-spe' : (lambda x: x < SPE_LOW_THRESHOLD),
-    'max-spe' : (lambda x: x > SPE_HIGH_THRESHOLD),
-    'min-rpe' : (lambda x: x < RPE_LOW_THRESHOLD),
-    'max-rpe' : (lambda x: x > RPE_HIGH_THRESHOLD)
+    # x should be a 4-tuple: rpe, spe, mf_rel, mb_rel
+    'min-rpe' : (lambda x: x[0] < RPE_LOW_THRESHOLD),
+    'max-rpe' : (lambda x: x[0] > RPE_HIGH_THRESHOLD),
+    'min-spe' : (lambda x: x[1] < SPE_LOW_THRESHOLD),
+    'max-spe' : (lambda x: x[1] > SPE_HIGH_THRESHOLD),
+    'min-mf-rel' : (lambda x: x[2] < MF_REL_LOW_THRESHOLD),
+    'max-mf-rel' : (lambda x: x[2] > MF_REL_HIGH_THRESHOLD),
+    'min-mb-rel' : (lambda x: x[3] < MB_REL_LOW_THRESHOLD),
+    'max-mb-rel' : (lambda x: x[3] > MB_REL_HIGH_THRESHOLD)
 }
 
 def error_to_reward(error, mode=DEFAULT_CONTROL_MODE, bias=CONTROL_REWARD_BIAS):
@@ -38,7 +49,7 @@ def error_to_reward(error, mode=DEFAULT_CONTROL_MODE, bias=CONTROL_REWARD_BIAS):
         print("Warning: control mode {0} not found, use default mode {1}".format(mode, DEFAULT_CONTROL_MODE))
         cmp_func = error_reward_map[DEFAULT_CONTROL_MODE]
 
-    if cmp_func(abs(error)):
+    if cmp_func(error):
         return CONTROL_REWARD + bias
     else:
         return bias
@@ -66,22 +77,20 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
     ddqn    = DoubleDQN(env.observation_space[MDP.CONTROL_AGENT_INDEX],
                         env.action_space[MDP.CONTROL_AGENT_INDEX],
                         torch.cuda.is_available()) # use DDQN for control agent
-    sarsa   = SARSA(env.action_space[MDP.HUMAN_AGENT_INDEX], SARSA.RANDOM_PROBABILITY, rl_learning_rate) # SARSA model-free learner
+    sarsa   = SARSA(env.action_space[MDP.HUMAN_AGENT_INDEX], learning_rate=rl_learning_rate) # SARSA model-free learner
     forward = FORWARD(env.observation_space[MDP.HUMAN_AGENT_INDEX],
                       env.action_space[MDP.HUMAN_AGENT_INDEX],
-                      env.state_reward_func, env.output_states_offset, FORWARD.RANDOM_PROBABILITY,
-                      FORWARD.TEMPORAL_DISCOUNT_FACTOR, rl_learning_rate) # forward model-based learner
+                      env.state_reward_func, env.output_states_offset, learning_rate=rl_learning_rate) # forward model-based learner
     arb     = Arbitrator(AssocRelEstimator(estimator_learning_rate, MDP.POSSIBLE_OUTPUTS[-1]),
-                         BayesRelEstimator(BayesRelEstimator.MEMORY_SIZE, BayesRelEstimator.CATEGORIES, threshold),
-                         amp_mb_to_mf, amp_mf_to_mb, temperature)
+                         BayesRelEstimator(thereshold=threshold),
+                         amp_mb_to_mf=amp_mb_to_mf, amp_mf_to_mb=amp_mf_to_mb)
 
     # register in the communication controller
     env.agent_comm_controller.register('model-based', forward)
 
-    for episode in range(TOTAL_EPISODES):
-        cumulative_p_mb = 0
-        cum_mf_rel      = 0
-        cum_mb_rel      = 0
+    gData.new_simulation()
+    for episode in tqdm(range(TOTAL_EPISODES)):
+        cum_p_mb = cum_mf_rel = cum_mb_rel = cum_rpe = cum_spe = cum_ctrl_reward = 0
         for trials in range(TRIALS_PER_SESSION):
             game_ternimate = False
             human_obs, control_obs_frag = env.reset()
@@ -107,17 +116,24 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
                 rpe = sarsa.optimize(human_reward, human_action, 
                                      next_human_action, human_obs, next_human_obs)
                 mf_rel, mb_rel, p_mb = arb.add_pe(rpe, spe)
-                cumulative_p_mb += p_mb
+                cum_p_mb += p_mb
                 cum_mf_rel += mf_rel
                 cum_mb_rel += mb_rel
+                cum_rpe += abs(rpe)
+                cum_spe += spe
 
                 """update control agent"""
+                ctrl_reward = error_to_reward((abs(rpe), spe, mf_rel, mb_rel), CONTROL_MODE)
                 next_control_obs = np.append(next_control_obs_frag, human_reward)
-                ddqn.optimize(control_obs, control_action, next_control_obs, error_to_reward(spe, CONTROL_MODE))
+                ddqn.optimize(control_obs, control_action, next_control_obs, ctrl_reward)
+                cum_ctrl_reward += ctrl_reward
                 
                 """iterators update"""
                 control_obs = next_control_obs
                 human_obs   = next_human_obs
-        print("p_mb avg: ", (cumulative_p_mb / (TRIALS_PER_SESSION * MDP_STAGES)), end='    ')
-        print("mf_rel: ", (cum_mf_rel / (TRIALS_PER_SESSION * MDP_STAGES)), end='   ')
-        print("mb_rel: ", (cum_mb_rel / (TRIALS_PER_SESSION * MDP_STAGES)))
+        total_actions = TRIALS_PER_SESSION * MDP_STAGES
+        gData.add_res(episode, list(map(lambda x: x / total_actions,
+                                        [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_ctrl_reward])))
+    gData.plot(CONTROL_MODE)
+    gData.plot_full()
+    gData.complete_simulation()

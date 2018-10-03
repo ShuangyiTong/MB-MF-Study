@@ -3,6 +3,8 @@ import sys
 import csv
 import simulation as sim
 
+from analysis import gData, MODE_MAP
+
 usage_str = """
 Model-free, model-based learning simulation
 
@@ -10,7 +12,8 @@ Usage:
     -d load parameters from csv file, default is regdata.csv
     --set-param-file [parameter file]             Specify the parameter csv file to load
     --mdp-stages [MDP environment stages]         Specify how many stages in MDP environment
-    --ctrl-mode <min-spe/max-spe/min-rpe/max-rpe> Choose control agent mode
+    --ctrl-mode <min-spe/max-spe/min-rpe/max-rpe/min-mf-rel/max-mf-rel/min-mb-rel/max-mb-rel> 
+                                                  Choose control agent mode
     --disable-control                             Disable control agents
 """
 
@@ -49,9 +52,12 @@ if __name__ == '__main__':
     if LOAD_PARAM_FILE:
         with open(PARAMETER_FILE) as f:
             csv_parser = csv.reader(f)
-            for row in csv_parser:
+            for index, row in enumerate(csv_parser):
+                print("Data entry: {0}/{1}".format(index + 1, 22))
                 row = list(map(float, row[:-1])) # convert to float
-                sim.simulation(row[0], row[1], row[2],
-                               row[3], row[4], row[5])
+                for mode, _ in MODE_MAP.items():
+                    sim.CONTROL_MODE = mode
+                    sim.simulation(row[0], row[1], row[2],
+                                   row[3], row[4], row[5])
     else:
         sim.simulation()
