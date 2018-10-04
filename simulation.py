@@ -20,6 +20,8 @@ SPE_LOW_THRESHOLD     = 0.1
 SPE_HIGH_THRESHOLD    = 0.5
 RPE_LOW_THRESHOLD     = 5
 RPE_HIGH_THRESHOLD    = 20
+MIX_LOW_THRESHOLD     = 0.15
+MIX_HIGH_THRESHOLD    = 0.7
 MF_REL_HIGH_THRESHOLD = 0.8
 MF_REL_LOW_THRESHOLD  = 0.5
 MB_REL_HIGH_THRESHOLD = 0.7
@@ -29,6 +31,7 @@ CONTROL_REWARD_BIAS   = -10
 DEFAULT_CONTROL_MODE  = 'max-spe'
 CONTROL_MODE          = DEFAULT_CONTROL_MODE
 CTRL_AGENTS_ENABLED   = True
+RPE_DISCOUNT_FACTOR   = 0.003
 
 error_reward_map = {
     # x should be a 4-tuple: rpe, spe, mf_rel, mb_rel
@@ -39,7 +42,11 @@ error_reward_map = {
     'min-mf-rel' : (lambda x: x[2] < MF_REL_LOW_THRESHOLD),
     'max-mf-rel' : (lambda x: x[2] > MF_REL_HIGH_THRESHOLD),
     'min-mb-rel' : (lambda x: x[3] < MB_REL_LOW_THRESHOLD),
-    'max-mb-rel' : (lambda x: x[3] > MB_REL_HIGH_THRESHOLD)
+    'max-mb-rel' : (lambda x: x[3] > MB_REL_HIGH_THRESHOLD),
+    'min-rpe-min-spe' : (lambda x: x[0] * RPE_DISCOUNT_FACTOR + x[1] < MIX_LOW_THRESHOLD),
+    'max-rpe-max-spe' : (lambda x: x[0] * RPE_DISCOUNT_FACTOR + x[1] > MIX_HIGH_THRESHOLD),
+    'min-rpe-max-spe' : (lambda x: x[0] * -RPE_DISCOUNT_FACTOR + x[1] < MIX_LOW_THRESHOLD),
+    'max-rpe-min-spe' : (lambda x: x[0] * RPE_DISCOUNT_FACTOR - x[1] < MIX_LOW_THRESHOLD)
 }
 
 def error_to_reward(error, mode=DEFAULT_CONTROL_MODE, bias=CONTROL_REWARD_BIAS):

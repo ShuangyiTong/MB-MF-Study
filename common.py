@@ -40,7 +40,7 @@ class AgentCommController:
 
         Learners may include the following functions to be fully functional
         with these classes:
-            reset
+            env_reset
     """
     def __init__(self):
          # learners are stored in a dict of the form id - list of learners
@@ -58,9 +58,9 @@ class AgentCommController:
     def reset(self, identifier, info=None):
         for learner in self.learners[identifier]:
             if info is not None:
-                learner.reset(info)
+                learner.env_reset(info)
             else:
-                learner.reset()
+                learner.env_reset()
 
 class MLP(nn.Module):
     """Multi Layer Perceptron

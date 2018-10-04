@@ -15,17 +15,21 @@ Usage:
     --ctrl-mode <min-spe/max-spe/min-rpe/max-rpe/min-mf-rel/max-mf-rel/min-mb-rel/max-mb-rel> 
                                                   Choose control agent mode
     --disable-control                             Disable control agents
+    --trials [num trials per episodes]
+    --episodes [num episodes]
+    --all-mode                                    Execute all control mode
 """
 
 def usage():
     print(usage_str)
 
 LOAD_PARAM_FILE = False
+ALL_MODE        = False
 PARAMETER_FILE  = 'regdata.csv'
 
 if __name__ == '__main__':
     short_opt = "hd"
-    long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file="]
+    long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode"]
     try:
         opts, args = getopt.getopt(sys.argv[1:], short_opt, long_opt)
     except getopt.GetoptError as err:
@@ -46,6 +50,12 @@ if __name__ == '__main__':
             LOAD_PARAM_FILE = True
         elif o == "--set-param-file":
             PARAMETER_FILE = a
+        elif o == "--episodes":
+            sim.TOTAL_EPISODES = int(a)
+        elif o == "--trials":
+            sim.TRIALS_PER_SESSION = int(a)
+        elif o == "--all-mode":
+            ALL_MODE = True
         else:
             assert False, "unhandled option"
 
@@ -55,9 +65,17 @@ if __name__ == '__main__':
             for index, row in enumerate(csv_parser):
                 print("Data entry: {0}/{1}".format(index + 1, 22))
                 row = list(map(float, row[:-1])) # convert to float
-                for mode, _ in MODE_MAP.items():
-                    sim.CONTROL_MODE = mode
+                if ALL_MODE:
+                    for mode, _ in MODE_MAP.items():
+                        sim.CONTROL_MODE = mode
+                        sim.simulation(row[0], row[1], row[2],
+                                    row[3], row[4], row[5])
+                else:
                     sim.simulation(row[0], row[1], row[2],
                                    row[3], row[4], row[5])
+    elif ALL_MODE:
+        for mode, _ in MODE_MAP.items():
+            sim.CONTROL_MODE = mode
+            sim.simulation()
     else:
         sim.simulation()

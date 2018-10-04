@@ -14,12 +14,16 @@ FIG_SIZE = (24,14)
 DEFAULT_TITLE = 'Plot-'
 COLUMNS = ['rpe', 'spe', 'mf_rel', 'mb_rel', 'p_mb', 'ctrl_reward']
 MODE_MAP = {
-    'min-spe' : ('spe'),
-    'max-spe' : ('spe'),
-    'min-rpe' : ('rpe'),
-    'max-rpe' : ('rpe')
+    'min-spe' : ['spe', None],
+    'max-spe' : ['spe', None],
+    'min-rpe' : ['rpe', None],
+    'max-rpe' : ['rpe', None],
+    'min-rpe-min-spe' : ['spe', 'rpe'],
+    'max-rpe-max-spe' : ['spe', 'rpe'],
+    'max-rpe-min-spe' : ['spe', 'rpe'],
+    'min-rpe-max-spe' : ['spe', 'rpe']
 }
-RESULTS_FOLDER = 'history_results/' + '{:%Y-%m-%d}'.format(datetime.datetime.now()) + '/'
+RESULTS_FOLDER = 'history_results/' + '{:%Y-%m-%d}'.format(datetime.datetime.now()) + '/' + '{:%Y-%m-%d-%H-%M-%S-%f}'.format(datetime.datetime.now()) + '/'
 try:
     os.makedirs(RESULTS_FOLDER)
 except:
@@ -59,8 +63,8 @@ class Analysis:
         self.current_df.to_msgpack(RESULTS_FOLDER + datetime_str + '.msgpack')
 
     def plot(self, mode):
-        plot_title = mode + ' Agent: ' + str(len(self.data) + 1)
-        self.plot_line(MODE_MAP[mode], plot_title=plot_title)
+        plot_title = mode + ' agent: ' + str(len(self.data) + 1)
+        self.plot_line(MODE_MAP[mode][0], right_series_names=MODE_MAP[mode][1], plot_title=plot_title)
 
 gData = Analysis()
 

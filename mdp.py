@@ -37,7 +37,7 @@ class MDP(gym.Env):
     0 - doing nothing
     1 - more deterministic: increase variance of trans_prob
     2 - more stochastic: decrease variance of trans_prob
-    3 - reset environment
+    3 - output reset
     """
     NUM_CONTROL_ACTION    = 4
 
@@ -139,17 +139,15 @@ class MDP(gym.Env):
             [lambda env: env, # do nothing
              lambda env: setattr(env, 'trans_prob', [1./len(env.trans_prob) for i in range(len(env.trans_prob))]), # uniform trans_prob
              lambda env: setattr(env, 'trans_prob', env.trans_prob_reset), # reset original trans_prob
-             lambda env: env._param_reset()
+             lambda env: env._output_reset()
             ][action[1]](self)
             return None, None, None, None
         else:
             raise ValueError
 
-    def _param_reset(self):
+    def _output_reset(self):
         """Reset parameters, used as an action in control agent space
         """
-        self.trans_prob  = self.trans_prob_reset
-        self.bias        = self.bias_reset
         self.output_states = choice(self.outputs, self.num_output_states)
         # refresh the closure as well
         self.state_reward_func = self._make_state_reward_func()

@@ -35,6 +35,7 @@ class FORWARD:
         self.epsilon         = epsilon
         self.discount_factor = discount_factor
         self.learning_rate   = learning_rate
+        self.T               = {} # transition matrix
         self.reset(state_reward_func)
     
     def _Q_fitting(self):
@@ -95,14 +96,23 @@ class FORWARD:
         self._Q_fitting()
         return spe
 
-    def reset(self, state_reward_func):
+    def env_reset(self, state_reward_func):
+        """Called by the agent communication controller when environment sends a
+        reset signal
+
+        Args:
+            state_reward_func (closure): as in constructor
+        """
+        self.reset(state_reward_func, False)
+
+    def reset(self, state_reward_func, reset_trans_prob=True):
         self.state_reward_func = state_reward_func
-        # initialize transition matrix
-        self.T = {}
         for state in range(self.num_states):
-            self.T[state] = {action: [] for action in range(self.num_actions)}
+            if reset_trans_prob:
+                self.T[state] = {action: [] for action in range(self.num_actions)}
             for action in range(self.num_actions):
                 for next_state in range(self.num_states):
-                    self.T[state][action].append((1./self.num_states, self.state_reward_func(next_state)))
+                    self.T[state][action].append(((1./self.num_states if reset_trans_prob else self.T[state][action][next_state]), 
+                                                  self.state_reward_func(next_state)))
         # build state-action value mapping
         self._Q_fitting()
