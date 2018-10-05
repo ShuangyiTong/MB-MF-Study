@@ -42,7 +42,7 @@ class MDP(gym.Env):
     NUM_CONTROL_ACTION    = 5
 
     def __init__(self, stages=STAGES, trans_prob=TRANSITON_PROBABILITY, num_actions=NUM_ACTIONS,
-                 outputs=POSSIBLE_OUTPUTS, bias=0):
+                 outputs=POSSIBLE_OUTPUTS):
         """
         Args:
             stages (int): stages of the MDP
@@ -51,11 +51,9 @@ class MDP(gym.Env):
                 by player. Note total number of possible actions should be multiplied
                 by the size of trans_prob
             outputs (list): an array specifying possible outputs
-            bias (float): bias added to the final reward
         """
         # environment global variables
         self.stages            = stages
-        self.bias              = bias
         self.human_state       = 0 # start from zero
 
         # human agent variables
@@ -67,21 +65,18 @@ class MDP(gym.Env):
         self.output_states = choice(outputs, self.num_output_states)
         self.output_states_offset = int((pow(self.possible_actions, self.stages) - 1)
             / (self.possible_actions - 1)) # geometric series summation
-        self.num_states        = self.output_states_offset + len(self.outputs)
+        self.num_states        = self.output_states_offset + self.num_output_states
         self.observation_space = [spaces.Discrete(self.num_states)] # human agent can see states only
         self.state_reward_func = self._make_state_reward_func()
 
         # control agent variables
         self.action_space.append(spaces.Discrete(MDP.NUM_CONTROL_ACTION)) # control agent action space
         self.observation_space.append(spaces.Tuple((
-            spaces.MultiBinary(self.num_states), # one hot state
-            spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=float), # rewards
-            spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=float), # bias
-            spaces.Box(low=0, high=1, shape=(num_actions,), dtype=float)))) # transition probability
+            spaces.Box(low=0, high=1, shape=(num_actions,), dtype=float), # transition probability
+            spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=float)))) # rewards
 
         # for reset reference
         self.trans_prob_reset = trans_prob
-        self.bias_reset       = bias
 
         # agent communication controller
         self.agent_comm_controller = AgentCommController()
@@ -91,11 +86,7 @@ class MDP(gym.Env):
                if s >= self.output_states_offset else 0
 
     def _make_control_observation(self):
-        target_state     = np.array([self.human_state]).reshape(-1)
-        one_hot_state    = np.eye(self.num_states)[target_state]
-        bias_state       = np.array([[self.bias]])
-        trans_prob_state = np.array([self.trans_prob])
-        return np.concatenate((one_hot_state, bias_state, trans_prob_state), axis=1)[0,:]
+        return self.trans_prob
 
     def step(self, action):
         """"Take one step in the environment
@@ -126,11 +117,10 @@ class MDP(gym.Env):
             reward = self.state_reward_func(state)
             if state < self.output_states_offset:
                 done = False
-                self.human_state = state
             else:
                 done = True
-                self.human_state = self.output_states_offset + self.outputs.index(reward)
-            return self.human_state, reward + self.bias, done, self._make_control_observation()
+            self.human_state = state
+            return self.human_state, reward, done, self._make_control_observation()
         elif action[0] == MDP.CONTROL_AGENT_INDEX:
             """ Control action
             Integrate functional and object oriented programming techniques
