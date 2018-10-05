@@ -32,6 +32,8 @@ DEFAULT_CONTROL_MODE  = 'max-spe'
 CONTROL_MODE          = DEFAULT_CONTROL_MODE
 CTRL_AGENTS_ENABLED   = True
 RPE_DISCOUNT_FACTOR   = 0.003
+ACTION_PERIOD         = 7
+STATIC_CONTROL_AGENT  = True
 
 error_reward_map = {
     # x should be a 4-tuple: rpe, spe, mf_rel, mb_rel
@@ -45,8 +47,19 @@ error_reward_map = {
     'max-mb-rel' : (lambda x: x[3] > MB_REL_HIGH_THRESHOLD),
     'min-rpe-min-spe' : (lambda x: x[0] * RPE_DISCOUNT_FACTOR + x[1] < MIX_LOW_THRESHOLD),
     'max-rpe-max-spe' : (lambda x: x[0] * RPE_DISCOUNT_FACTOR + x[1] > MIX_HIGH_THRESHOLD),
-    'min-rpe-max-spe' : (lambda x: x[0] * -RPE_DISCOUNT_FACTOR + x[1] < MIX_LOW_THRESHOLD),
-    'max-rpe-min-spe' : (lambda x: x[0] * RPE_DISCOUNT_FACTOR - x[1] < MIX_LOW_THRESHOLD)
+    'min-rpe-max-spe' : (lambda x: x[0] * RPE_DISCOUNT_FACTOR - x[1] < MIX_LOW_THRESHOLD),
+    'max-rpe-min-spe' : (lambda x: x[0] * -RPE_DISCOUNT_FACTOR + x[1] < MIX_LOW_THRESHOLD)
+}
+
+static_action_map = {
+    'min-rpe' : 0,
+    'max-rpe' : 3,
+    'min-spe' : 0,
+    'max-spe' : 1,
+    'min-rpe-min-spe' : 0,
+    'max-rpe-max-spe' : 4,
+    'min-rpe-max-spe' : 2,
+    'max-rpe-min-spe' : 3
 }
 
 def error_to_reward(error, mode=DEFAULT_CONTROL_MODE, bias=CONTROL_REWARD_BIAS):
@@ -79,7 +92,7 @@ def compute_human_action(arbitrator, human_obs, model_free, model_based):
 
 def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=AssocRelEstimator.LEARNING_RATE,
                amp_mb_to_mf=Arbitrator.AMPLITUDE_MB_TO_MF, amp_mf_to_mb=Arbitrator.AMPLITUDE_MF_TO_MB,
-               temperature=Arbitrator.SOFTMAX_TEMPERATURE, rl_learning_rate=SARSA.LEARNING_RATE):
+               temperature=Arbitrator.SOFTMAX_TEMPERATURE, rl_learning_rate=SARSA.LEARNING_RATE, PARAMETER_SET='DEFAULT'):
     env     = MDP(MDP_STAGES)
     ddqn    = DoubleDQN(env.observation_space[MDP.CONTROL_AGENT_INDEX],
                         env.action_space[MDP.CONTROL_AGENT_INDEX],
@@ -98,16 +111,21 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
     gData.new_simulation()
     for episode in tqdm(range(TOTAL_EPISODES)):
         cum_p_mb = cum_mf_rel = cum_mb_rel = cum_rpe = cum_spe = cum_ctrl_reward = 0
+        cum_ctrl_act = np.zeros(MDP.NUM_CONTROL_ACTION)
         for trials in range(TRIALS_PER_SESSION):
             game_ternimate = False
             human_obs, control_obs_frag = env.reset()
             control_obs = np.append(control_obs_frag, CONTROL_REWARD_BIAS) # use bias to initialize reward
             while not game_ternimate:
                 """control agent choose action"""
-                control_action = ddqn.action(control_obs)
+                if STATIC_CONTROL_AGENT:
+                    control_action = static_action_map[CONTROL_MODE]
+                else:
+                    control_action = ddqn.action(control_obs)
+                cum_ctrl_act[control_action] += 1
 
                 """control act on environment"""
-                if CTRL_AGENTS_ENABLED:
+                if CTRL_AGENTS_ENABLED and (trials % ACTION_PERIOD is 0 or not STATIC_CONTROL_AGENT):
                     _, _, _, _ = env.step([MDP.CONTROL_AGENT_INDEX, control_action])
                 
                 """human choose action"""
@@ -140,7 +158,8 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
                 human_obs   = next_human_obs
         total_actions = TRIALS_PER_SESSION * MDP_STAGES
         gData.add_res(episode, list(map(lambda x: x / total_actions,
-                                        [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_ctrl_reward])))
-    gData.plot(CONTROL_MODE)
-    gData.plot_full()
+                                        [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_ctrl_reward])) + list(cum_ctrl_act))
+    gData.plot(CONTROL_MODE, CONTROL_MODE + ' - parameter set: ' + PARAMETER_SET)
+    gData.plot_action_effect(CONTROL_MODE, CONTROL_MODE + ' Action Summary - parameter set: ' + PARAMETER_SET)
+    gData.plot_all_human_param(CONTROL_MODE + ' Human Agent State - parameter set: ' + PARAMETER_SET)
     gData.complete_simulation()

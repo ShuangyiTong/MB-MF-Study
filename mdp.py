@@ -39,7 +39,7 @@ class MDP(gym.Env):
     2 - more stochastic: decrease variance of trans_prob
     3 - output reset
     """
-    NUM_CONTROL_ACTION    = 4
+    NUM_CONTROL_ACTION    = 5
 
     def __init__(self, stages=STAGES, trans_prob=TRANSITON_PROBABILITY, num_actions=NUM_ACTIONS,
                  outputs=POSSIBLE_OUTPUTS, bias=0):
@@ -137,13 +137,36 @@ class MDP(gym.Env):
             to create this pythonic, compact code, similar to switch in other language
             """
             [lambda env: env, # do nothing
-             lambda env: setattr(env, 'trans_prob', [1./len(env.trans_prob) for i in range(len(env.trans_prob))]), # uniform trans_prob
-             lambda env: setattr(env, 'trans_prob', env.trans_prob_reset), # reset original trans_prob
-             lambda env: env._output_reset()
+             lambda env: env._set_stochastic_trans_prob(), # uniform trans_prob
+             lambda env: env._output_average_with_stochastic_trans_prob(),
+             lambda env: env._output_reset(),
+             lambda env: env._output_reset_with_stochastic_trans_prob()
             ][action[1]](self)
             return None, None, None, None
         else:
             raise ValueError
+
+    def _set_stochastic_trans_prob(self):
+        self.trans_prob = [1./len(self.trans_prob) for i in range(len(self.trans_prob))]
+
+    def _output_swap(self):
+        self.output_states = list(map((lambda x: 0 if x == 20 else
+                                                 10 if x == 40 else
+                                                 20 if x == 0 else
+                                                 40), self.output_states))
+        self.state_reward_func = self._make_state_reward_func()
+        self.agent_comm_controller.reset('model-based', self.state_reward_func)
+
+    def _output_average_with_stochastic_trans_prob(self):
+        self.output_states = [0.5 * (x - 20) + 20 for x in self.output_states]
+        self.outputs = [0.5 * (x - 20) + 20 for x in self.outputs]
+        self.state_reward_func = self._make_state_reward_func()
+        self.agent_comm_controller.reset('model-based', self.state_reward_func)
+        self._set_stochastic_trans_prob()
+
+    def _output_reset_with_stochastic_trans_prob(self):
+        self._output_reset()
+        self._set_stochastic_trans_prob()
 
     def _output_reset(self):
         """Reset parameters, used as an action in control agent space

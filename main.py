@@ -10,6 +10,7 @@ Model-free, model-based learning simulation
 
 Usage:
     -d load parameters from csv file, default is regdata.csv
+    -n [number of parameters entries to simulate]
     --set-param-file [parameter file]             Specify the parameter csv file to load
     --mdp-stages [MDP environment stages]         Specify how many stages in MDP environment
     --ctrl-mode <min-spe/max-spe/min-rpe/max-rpe/min-mf-rel/max-mf-rel/min-mb-rel/max-mb-rel> 
@@ -23,12 +24,13 @@ Usage:
 def usage():
     print(usage_str)
 
-LOAD_PARAM_FILE = False
-ALL_MODE        = False
-PARAMETER_FILE  = 'regdata.csv'
+LOAD_PARAM_FILE   = False
+NUM_PARAMETER_SET = sys.maxsize
+ALL_MODE          = False
+PARAMETER_FILE    = 'regdata.csv'
 
 if __name__ == '__main__':
-    short_opt = "hd"
+    short_opt = "hdn:"
     long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode"]
     try:
         opts, args = getopt.getopt(sys.argv[1:], short_opt, long_opt)
@@ -56,6 +58,8 @@ if __name__ == '__main__':
             sim.TRIALS_PER_SESSION = int(a)
         elif o == "--all-mode":
             ALL_MODE = True
+        elif o == "-n":
+            NUM_PARAMETER_SET = int(a)
         else:
             assert False, "unhandled option"
 
@@ -63,16 +67,18 @@ if __name__ == '__main__':
         with open(PARAMETER_FILE) as f:
             csv_parser = csv.reader(f)
             for index, row in enumerate(csv_parser):
+                if index >= NUM_PARAMETER_SET:
+                    break
                 print("Data entry: {0}/{1}".format(index + 1, 22))
                 row = list(map(float, row[:-1])) # convert to float
                 if ALL_MODE:
                     for mode, _ in MODE_MAP.items():
                         sim.CONTROL_MODE = mode
                         sim.simulation(row[0], row[1], row[2],
-                                    row[3], row[4], row[5])
+                                       row[3], row[4], row[5], PARAMETER_SET=str(index))
                 else:
                     sim.simulation(row[0], row[1], row[2],
-                                   row[3], row[4], row[5])
+                                   row[3], row[4], row[5], PARAMETER_SET=str(index))
     elif ALL_MODE:
         for mode, _ in MODE_MAP.items():
             sim.CONTROL_MODE = mode

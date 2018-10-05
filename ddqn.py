@@ -109,4 +109,4 @@ class DoubleDQN:
             loss.backward() # calculate gradient
             self.optimizer.step() # apply calculated gradient
             
-            self.tau_offset +=1
+            self.tau_offset += 1
