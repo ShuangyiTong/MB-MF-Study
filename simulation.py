@@ -32,7 +32,7 @@ DEFAULT_CONTROL_MODE  = 'max-spe'
 CONTROL_MODE          = DEFAULT_CONTROL_MODE
 CTRL_AGENTS_ENABLED   = True
 RPE_DISCOUNT_FACTOR   = 0.003
-ACTION_PERIOD         = 7
+ACTION_PERIOD         = 3
 STATIC_CONTROL_AGENT  = True
 
 error_reward_map = {
@@ -109,8 +109,9 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
     env.agent_comm_controller.register('model-based', forward)
 
     gData.new_simulation()
+    gData.add_human_data([amp_mf_to_mb / amp_mb_to_mf, rl_learning_rate, estimator_learning_rate, threshold, temperature])
     for episode in tqdm(range(TOTAL_EPISODES)):
-        cum_p_mb = cum_mf_rel = cum_mb_rel = cum_rpe = cum_spe = cum_ctrl_reward = 0
+        cum_p_mb = cum_mf_rel = cum_mb_rel = cum_rpe = cum_spe = cum_ctrl_reward = cum_score = 0
         cum_ctrl_act = np.zeros(MDP.NUM_CONTROL_ACTION)
         for trials in range(TRIALS_PER_SESSION):
             game_ternimate = False
@@ -146,6 +147,7 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
                 cum_mb_rel += mb_rel
                 cum_rpe += abs(rpe)
                 cum_spe += spe
+                cum_score += human_reward
 
                 """update control agent"""
                 ctrl_reward = error_to_reward((abs(rpe), spe, mf_rel, mb_rel), CONTROL_MODE)
@@ -156,10 +158,11 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
                 """iterators update"""
                 control_obs = next_control_obs
                 human_obs   = next_human_obs
+        cum_score *= MDP_STAGES
         total_actions = TRIALS_PER_SESSION * MDP_STAGES
         gData.add_res(episode, list(map(lambda x: x / total_actions,
-                                        [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_ctrl_reward])) + list(cum_ctrl_act))
+                                        [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_ctrl_reward, cum_score])) + list(cum_ctrl_act))
+    gData.plot_all_human_param(CONTROL_MODE + ' Human Agent State - parameter set: ' + PARAMETER_SET)
     gData.plot(CONTROL_MODE, CONTROL_MODE + ' - parameter set: ' + PARAMETER_SET)
     gData.plot_action_effect(CONTROL_MODE, CONTROL_MODE + ' Action Summary - parameter set: ' + PARAMETER_SET)
-    gData.plot_all_human_param(CONTROL_MODE + ' Human Agent State - parameter set: ' + PARAMETER_SET)
     gData.complete_simulation()

@@ -15,7 +15,8 @@ from mdp import MDP
 FIG_SIZE = (24,14)
 DEFAULT_TITLE = 'Plot-'
 ACTION_COLUMN = ['action_' + str(action_num) for action_num in range(MDP.NUM_CONTROL_ACTION)]
-COLUMNS = ['rpe', 'spe', 'mf_rel', 'mb_rel', 'p_mb', 'ctrl_reward'] + ACTION_COLUMN
+HUMAN_DATA_COLUMN = ['MB preference', 'Learning Rate', 'Rel_MF Learning Rate', 'Threshold', 'Inverse Softmax Temp']
+COLUMNS = ['rpe', 'spe', 'mf_rel', 'mb_rel', 'p_mb', 'ctrl_reward', 'score'] + ACTION_COLUMN
 MODE_MAP = {
     'min-spe' : ['spe', None],
     'max-spe' : ['spe', None],
@@ -36,6 +37,7 @@ class Analysis:
     def __init__(self):
         self.data = []
         self.current_df = None
+        self.human_data_df = pd.DataFrame(columns=HUMAN_DATA_COLUMN)
 
     def new_simulation(self):
         self.current_df = pd.DataFrame(columns=COLUMNS)
@@ -48,21 +50,26 @@ class Analysis:
     def add_res(self, index, res):
         self.current_df.loc[index] = res
 
+    def add_human_data(self, human_data):
+        self.human_data_df.loc[len(self.data)] = human_data
+
     def plot_line(self, left_series_names, right_series_names=None, plot_title=None):
+        fig, axes = plt.subplots(nrows=2, ncols=1, gridspec_kw = {'height_ratios': [5, 1]})
         if plot_title is None:
             plot_title = DEFAULT_TITLE + str(len(self.data) + 1)
-        ax1 = self.current_df.loc[:,left_series_names].plot(figsize=FIG_SIZE, grid=True, title=plot_title)
+        ax1 = self.current_df.loc[:,left_series_names].plot(ax=axes[0], figsize=FIG_SIZE, grid=True, title=plot_title)
         ax1.set_xlabel('Episodes')
         if right_series_names is not None:
             ax2 = self.current_df.loc[:,right_series_names].plot(grid=True, ax=ax1, secondary_y=True)
             ax2.legend(loc=1, bbox_to_anchor=(1.10,0.5))
         ax1.legend(loc=2, bbox_to_anchor=(-0.08,0.5))
+        self.human_data_df.loc[len(self.data)].plot(kind='bar', ax=axes[1], logy=True)
         plt.savefig(self.file_name(plot_title), bbox_inches='tight')
         plt.cla()
         plt.close()
 
     def plot_all_human_param(self, title=None):
-        self.plot_line(['spe', 'mf_rel', 'mb_rel', 'p_mb'], ['rpe', 'ctrl_reward'], title)
+        self.plot_line(['spe', 'mf_rel', 'mb_rel', 'p_mb'], ['rpe', 'ctrl_reward', 'score'], title)
         self.current_df.to_msgpack(self.file_name('RawData') + '.msgpack')
 
     def plot(self, mode, title=None):

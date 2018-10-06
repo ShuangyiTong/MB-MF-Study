@@ -35,9 +35,10 @@ class MDP(gym.Env):
 
     """Control Agent Action Space
     0 - doing nothing
-    1 - more deterministic: increase variance of trans_prob
-    2 - more stochastic: decrease variance of trans_prob
-    3 - output reset
+    1 - set stochastic: apply uniform distribution of transition probability
+    2 - decrease human reward variance with stochastic trans_prob
+    3 - randomize human reward
+    4 - randomize human reward and set stochastic trans_prob
     """
     NUM_CONTROL_ACTION    = 5
 
@@ -148,8 +149,7 @@ class MDP(gym.Env):
         self.agent_comm_controller.reset('model-based', self.state_reward_func)
 
     def _output_average_with_stochastic_trans_prob(self):
-        self.output_states = [0.5 * (x - 20) + 20 for x in self.output_states]
-        self.outputs = [0.5 * (x - 20) + 20 for x in self.outputs]
+        self.output_states = [0.9 * (x - 20) + 20 for x in self.output_states]
         self.state_reward_func = self._make_state_reward_func()
         self.agent_comm_controller.reset('model-based', self.state_reward_func)
         self._set_stochastic_trans_prob()
