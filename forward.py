@@ -15,7 +15,7 @@ class FORWARD:
 
     Currently support Discreate observation and action spaces only
     """
-    RANDOM_PROBABILITY       = 0.5
+    RANDOM_PROBABILITY       = 0.05
     TEMPORAL_DISCOUNT_FACTOR = 1.0
     LEARNING_RATE            = 0.5
     def __init__(self, observation_space, action_space, state_reward_func, output_offset,

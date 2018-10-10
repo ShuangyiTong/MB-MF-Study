@@ -14,17 +14,17 @@ from analysis import gData
 
 # preset constants
 MDP_STAGES            = 2
-TOTAL_EPISODES        = 1000
-TRIALS_PER_SESSION    = 80
+TOTAL_EPISODES        = 2000
+TRIALS_PER_SESSION    = 20
 SPE_LOW_THRESHOLD     = 0.1
 SPE_HIGH_THRESHOLD    = 0.5
 RPE_LOW_THRESHOLD     = 5
-RPE_HIGH_THRESHOLD    = 20
+RPE_HIGH_THRESHOLD    = 10
 MIX_LOW_THRESHOLD     = 0.15
 MIX_HIGH_THRESHOLD    = 0.7
 MF_REL_HIGH_THRESHOLD = 0.8
 MF_REL_LOW_THRESHOLD  = 0.5
-MB_REL_HIGH_THRESHOLD = 0.7
+MB_REL_HIGH_THRESHOLD = 0.55
 MB_REL_LOW_THRESHOLD  = 0.3
 CONTROL_REWARD        = 20
 CONTROL_REWARD_BIAS   = -10
@@ -158,6 +158,8 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
                 """iterators update"""
                 control_obs = next_control_obs
                 human_obs   = next_human_obs
+            if not STATIC_CONTROL_AGENT:
+                env.trans_prob = env.trans_prob_reset # reset transition probability may help DDQN learn something
         cum_score *= MDP_STAGES
         total_actions = TRIALS_PER_SESSION * MDP_STAGES
         gData.add_res(episode, list(map(lambda x: x / total_actions,
