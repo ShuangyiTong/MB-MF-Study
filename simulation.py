@@ -1,4 +1,4 @@
-""" Shuangyi Tong <stong@kaist.ac.kr>
+""" Shuangyi Tong <s9tong@edu.uwaterloo.ca>
     Sept 17, 2018
 """
 import torch
@@ -19,12 +19,12 @@ TRIALS_PER_SESSION    = 20
 SPE_LOW_THRESHOLD     = 0.1
 SPE_HIGH_THRESHOLD    = 0.5
 RPE_LOW_THRESHOLD     = 5
-RPE_HIGH_THRESHOLD    = 10
+RPE_HIGH_THRESHOLD    = 20
 MIX_LOW_THRESHOLD     = 0.15
 MIX_HIGH_THRESHOLD    = 0.7
 MF_REL_HIGH_THRESHOLD = 0.8
 MF_REL_LOW_THRESHOLD  = 0.5
-MB_REL_HIGH_THRESHOLD = 0.55
+MB_REL_HIGH_THRESHOLD = 0.7
 MB_REL_LOW_THRESHOLD  = 0.3
 CONTROL_REWARD        = 20
 CONTROL_REWARD_BIAS   = -10
@@ -34,6 +34,8 @@ CTRL_AGENTS_ENABLED   = True
 RPE_DISCOUNT_FACTOR   = 0.003
 ACTION_PERIOD         = 3
 STATIC_CONTROL_AGENT  = True
+ENABLE_PLOT           = True
+DISABLE_C_EXTENSION   = False
 
 error_reward_map = {
     # x should be a 4-tuple: rpe, spe, mf_rel, mb_rel
@@ -100,7 +102,8 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
     sarsa   = SARSA(env.action_space[MDP.HUMAN_AGENT_INDEX], learning_rate=rl_learning_rate) # SARSA model-free learner
     forward = FORWARD(env.observation_space[MDP.HUMAN_AGENT_INDEX],
                       env.action_space[MDP.HUMAN_AGENT_INDEX],
-                      env.state_reward_func, env.output_states_offset, learning_rate=rl_learning_rate) # forward model-based learner
+                      env.state_reward_func, env.output_states_offset,
+                      learning_rate=rl_learning_rate, disable_cforward=DISABLE_C_EXTENSION) # forward model-based learner
     arb     = Arbitrator(AssocRelEstimator(estimator_learning_rate, MDP.POSSIBLE_OUTPUTS[-1]),
                          BayesRelEstimator(thereshold=threshold),
                          amp_mb_to_mf=amp_mb_to_mf, amp_mf_to_mb=amp_mf_to_mb)
@@ -164,7 +167,8 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
         total_actions = TRIALS_PER_SESSION * MDP_STAGES
         gData.add_res(episode, list(map(lambda x: x / total_actions,
                                         [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_ctrl_reward, cum_score])) + list(cum_ctrl_act))
-    gData.plot_all_human_param(CONTROL_MODE + ' Human Agent State - parameter set: ' + PARAMETER_SET)
-    gData.plot(CONTROL_MODE, CONTROL_MODE + ' - parameter set: ' + PARAMETER_SET)
-    gData.plot_action_effect(CONTROL_MODE, CONTROL_MODE + ' Action Summary - parameter set: ' + PARAMETER_SET)
+    if ENABLE_PLOT:
+        gData.plot_all_human_param(CONTROL_MODE + ' Human Agent State - parameter set: ' + PARAMETER_SET)
+        gData.plot(CONTROL_MODE, CONTROL_MODE + ' - parameter set: ' + PARAMETER_SET)
+        gData.plot_action_effect(CONTROL_MODE, CONTROL_MODE + ' Action Summary - parameter set: ' + PARAMETER_SET)
     gData.complete_simulation()

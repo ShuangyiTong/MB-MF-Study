@@ -1,4 +1,4 @@
-""" Shuangyi Tong <stong@kaist.ac.kr>
+""" Shuangyi Tong <s9tong@edu.uwaterloo.ca>
     Sept 27, 2018
 """
 

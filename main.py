@@ -20,6 +20,8 @@ Usage:
     --episodes [num episodes]
     --all-mode                                    Execute all control mode
     --disable-static-control                      Use DDQN control instead of static control
+    --disable-plot                                Disable plot
+    --disable-c-ext                               Disable using C extension
 """
 
 def usage():
@@ -32,7 +34,8 @@ PARAMETER_FILE    = 'regdata.csv'
 
 if __name__ == '__main__':
     short_opt = "hdn:"
-    long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode", "disable-static-control"]
+    long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode", "disable-static-control",
+                 "disable-c-ext", "disable-plot"]
     try:
         opts, args = getopt.getopt(sys.argv[1:], short_opt, long_opt)
     except getopt.GetoptError as err:
@@ -63,6 +66,10 @@ if __name__ == '__main__':
             NUM_PARAMETER_SET = int(a)
         elif o == "--disable-static-control":
             sim.STATIC_CONTROL_AGENT = False
+        elif o == "--disable-c-ext":
+            sim.DISABLE_C_EXTENSION = True
+        elif o == "--disable-plot":
+            sim.ENABLE_PLOT = False
         else:
             assert False, "unhandled option"
 
@@ -88,7 +95,5 @@ if __name__ == '__main__':
         for mode, _ in MODE_MAP.items():
             sim.CONTROL_MODE = mode
             sim.simulation()
-        gData.generate_summary(sim.CONTROL_MODE)
     else:
         sim.simulation()
-        gData.generate_summary(sim.CONTROL_MODE)

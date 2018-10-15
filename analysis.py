@@ -1,4 +1,4 @@
-""" Shuangyi Tong <stong@kaist.ac.kr>
+""" Shuangyi Tong <s9tong@edu.uwaterloo.ca>
     Oct 1, 2018
 
     Data Analysis Module
@@ -85,6 +85,16 @@ class Analysis:
             f.write('\n        ' + ' '.join(map(str, cca.x_weights_)))
             f.write('\n    Y weights')
             f.write('\n        ' + ' '.join(map(str, cca.y_weights_)))
+
+        # generate historical CCA
+        cca_trace_df = pd.DataFrame(columns=HUMAN_DATA_COLUMN)
+        for index in range(self.data[0].shape[0])[3:]:
+            target_df = pd.DataFrame()
+            target_df['score'] = [df['score'].loc[:index].mean() for df in self.data]
+            cca.fit(self.human_data_df, target_df)
+            cca_trace_df.loc[index] = [abs(x[0]) for x in cca.x_weights_]
+        cca_trace_df.plot(figsize=FIG_SIZE, grid=True, title='CCA progression summary '+title)
+        plt.savefig(self.file_name('CCA progression summary '+title), bbox_inches='tight')
 
     def plot_line(self, left_series_names, right_series_names=None, plot_title=None):
         fig, axes = plt.subplots(nrows=2, ncols=1, gridspec_kw = {'height_ratios': [5, 1]})
