@@ -101,6 +101,7 @@ class DoubleDQN:
             target_value = self.target_Q(Variable(self.Tensor([
                 next_state for next_state in mini_batch.next_state if next_state is not None])))
             target_value = target_value.gather(1, Variable(argmax_action.unsqueeze_(1))) # Q(S_{t+1}, argmax_a Q(S_{t+1}, a; theta_t); theta_t^-)
+            target_value *= self.gamma
             target_value += Variable(self.Tensor(mini_batch.reward).unsqueeze_(1)) # R_{t+1}
 
             # compute the loss between estimated value and target value

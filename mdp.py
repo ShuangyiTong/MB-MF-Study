@@ -29,7 +29,7 @@ class MDP(gym.Env):
     CONTROL_AGENT_INDEX = 1
 
     STAGES                = 2
-    TRANSITON_PROBABILITY = [0.95, 0.05]
+    TRANSITON_PROBABILITY = [0.9, 0.1]
     NUM_ACTIONS           = 2
     POSSIBLE_OUTPUTS      = [0, 10, 20, 40]
 
@@ -73,8 +73,8 @@ class MDP(gym.Env):
         # control agent variables
         self.action_space.append(spaces.Discrete(MDP.NUM_CONTROL_ACTION)) # control agent action space
         self.observation_space.append(spaces.Tuple((
-            spaces.Box(low=0, high=1, shape=(num_actions,), dtype=float), # transition probability
-            spaces.Box(low=-np.inf, high=np.inf, shape=(1,), dtype=float)))) # rewards
+            spaces.Box(low=0, high=1, shape=(1,), dtype=float), # rpe
+            spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float)))) # spe
 
         # for reset reference
         self.trans_prob_reset = trans_prob
@@ -87,7 +87,7 @@ class MDP(gym.Env):
                if s >= self.output_states_offset else 0
 
     def _make_control_observation(self):
-        return self.trans_prob
+        return []
 
     def step(self, action):
         """"Take one step in the environment

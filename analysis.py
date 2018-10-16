@@ -101,7 +101,7 @@ class Analysis:
         if plot_title is None:
             plot_title = DEFAULT_TITLE + str(len(self.data) + 1)
         ax1 = self.current_df.loc[:,left_series_names].plot(ax=axes[0], figsize=FIG_SIZE, grid=True, title=plot_title)
-        ax1.set_xlabel('Episodes')
+        ax1.set_xlabel('Trials')
         if right_series_names is not None:
             ax2 = self.current_df.loc[:,right_series_names].plot(grid=True, ax=ax1, secondary_y=True)
             ax2.legend(loc=1, bbox_to_anchor=(1.10,0.5))
