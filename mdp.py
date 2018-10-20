@@ -43,7 +43,7 @@ class MDP(gym.Env):
     NUM_CONTROL_ACTION    = 5
 
     def __init__(self, stages=STAGES, trans_prob=TRANSITON_PROBABILITY, num_actions=NUM_ACTIONS,
-                 outputs=POSSIBLE_OUTPUTS):
+                 outputs=POSSIBLE_OUTPUTS, more_control_input=True):
         """
         Args:
             stages (int): stages of the MDP
@@ -52,6 +52,7 @@ class MDP(gym.Env):
                 by player. Note total number of possible actions should be multiplied
                 by the size of trans_prob
             outputs (list): an array specifying possible outputs
+            more_control_input (bool): more element in control observation
         """
         # environment global variables
         self.stages            = stages
@@ -71,10 +72,19 @@ class MDP(gym.Env):
         self.state_reward_func = self._make_state_reward_func()
 
         # control agent variables
+        self.more_control_input = more_control_input
         self.action_space.append(spaces.Discrete(MDP.NUM_CONTROL_ACTION)) # control agent action space
-        self.observation_space.append(spaces.Tuple((
-            spaces.Box(low=0, high=1, shape=(1,), dtype=float), # rpe
-            spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float)))) # spe
+        if more_control_input:
+            self.observation_space.append(spaces.Tuple((
+                spaces.Discrete(self.num_output_states), # output states
+                spaces.Box(low=0, high=1, shape=(num_actions,), dtype=float), # transition probability 
+                spaces.Box(low=0, high=1, shape=(1,), dtype=float), # rpe
+                spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float)))) # spe
+        else:
+            self.observation_space.append(spaces.Tuple((
+                spaces.Box(low=0, high=1, shape=(1,), dtype=float), # rpe
+                spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float)))) # spe
+            
 
         # for reset reference
         self.trans_prob_reset = trans_prob
@@ -87,7 +97,10 @@ class MDP(gym.Env):
                if s >= self.output_states_offset else 0
 
     def _make_control_observation(self):
-        return []
+        if self.more_control_input:
+            return np.concatenate([self.output_states, np.array(self.trans_prob)])
+        else:
+            return []
 
     def step(self, action):
         """"Take one step in the environment

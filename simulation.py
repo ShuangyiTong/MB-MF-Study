@@ -14,16 +14,17 @@ from analysis import gData
 
 # preset constants
 MDP_STAGES            = 2
-TRIALS_PER_SESSION    = 20
+TOTAL_EPISODES        = 100
+TRIALS_PER_EPISODE    = 80
 SPE_LOW_THRESHOLD     = 0.3
 SPE_HIGH_THRESHOLD    = 0.5
-RPE_LOW_THRESHOLD     = 5
-RPE_HIGH_THRESHOLD    = 10
+RPE_LOW_THRESHOLD     = 4
+RPE_HIGH_THRESHOLD    = 7
 MF_REL_HIGH_THRESHOLD = 0.8
 MF_REL_LOW_THRESHOLD  = 0.5
 MB_REL_HIGH_THRESHOLD = 0.7
 MB_REL_LOW_THRESHOLD  = 0.3
-CONTROL_REWARD        = 2
+CONTROL_REWARD        = 3
 CONTROL_REWARD_BIAS   = -1
 INIT_CTRL_INPUT       = [10, 0.5]
 DEFAULT_CONTROL_MODE  = 'max-spe'
@@ -34,6 +35,7 @@ ACTION_PERIOD         = 3
 STATIC_CONTROL_AGENT  = True
 ENABLE_PLOT           = True
 DISABLE_C_EXTENSION   = False
+MORE_CONTROL_INPUT    = True
 
 error_reward_map = {
     # x should be a 4-tuple: rpe, spe, mf_rel, mb_rel
@@ -93,82 +95,96 @@ def compute_human_action(arbitrator, human_obs, model_free, model_based):
 def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=AssocRelEstimator.LEARNING_RATE,
                amp_mb_to_mf=Arbitrator.AMPLITUDE_MB_TO_MF, amp_mf_to_mb=Arbitrator.AMPLITUDE_MF_TO_MB,
                temperature=Arbitrator.SOFTMAX_TEMPERATURE, rl_learning_rate=SARSA.LEARNING_RATE, PARAMETER_SET='DEFAULT'):
-    env     = MDP(MDP_STAGES)
+    env     = MDP(MDP_STAGES, more_control_input=MORE_CONTROL_INPUT)
     ddqn    = DoubleDQN(env.observation_space[MDP.CONTROL_AGENT_INDEX],
                         env.action_space[MDP.CONTROL_AGENT_INDEX],
                         torch.cuda.is_available()) # use DDQN for control agent
-    sarsa   = SARSA(env.action_space[MDP.HUMAN_AGENT_INDEX], learning_rate=rl_learning_rate) # SARSA model-free learner
-    forward = FORWARD(env.observation_space[MDP.HUMAN_AGENT_INDEX],
-                      env.action_space[MDP.HUMAN_AGENT_INDEX],
-                      env.state_reward_func, env.output_states_offset,
-                      learning_rate=rl_learning_rate, disable_cforward=DISABLE_C_EXTENSION) # forward model-based learner
     arb     = Arbitrator(AssocRelEstimator(estimator_learning_rate, MDP.POSSIBLE_OUTPUTS[-1]),
                          BayesRelEstimator(thereshold=threshold),
                          amp_mb_to_mf=amp_mb_to_mf, amp_mf_to_mb=amp_mf_to_mb)
 
-    # register in the communication controller
-    env.agent_comm_controller.register('model-based', forward)
-
     gData.new_simulation()
     gData.add_human_data([amp_mf_to_mb / amp_mb_to_mf, rl_learning_rate, estimator_learning_rate, threshold, temperature])
     control_obs_extra = INIT_CTRL_INPUT
-    for trial in tqdm(range(TRIALS_PER_SESSION)):
-        cum_p_mb = cum_mf_rel = cum_mb_rel = cum_rpe = cum_spe = ctrl_reward = score = 0
-        cum_ctrl_act                = np.zeros(MDP.NUM_CONTROL_ACTION)
-        game_terminate              = False
-        human_obs, control_obs_frag = env.reset()
-        control_obs                 = np.append(control_obs_frag, control_obs_extra)
+    for episode in tqdm(range(TOTAL_EPISODES)):
+        sarsa   = SARSA(env.action_space[MDP.HUMAN_AGENT_INDEX], learning_rate=rl_learning_rate) # SARSA model-free learner
+        forward = FORWARD(env.observation_space[MDP.HUMAN_AGENT_INDEX],
+                        env.action_space[MDP.HUMAN_AGENT_INDEX],
+                        env.state_reward_func, env.output_states_offset,
+                        learning_rate=rl_learning_rate, disable_cforward=DISABLE_C_EXTENSION) # forward model-based learner
+        # register in the communication controller
+        env.agent_comm_controller.register('model-based', forward)
+        cum_p_mb = cum_mf_rel = cum_mb_rel = cum_rpe = cum_spe = cum_reward = cum_score = 0
+        cum_ctrl_act = np.zeros(MDP.NUM_CONTROL_ACTION)
+        for trial in range(TRIALS_PER_EPISODE):
+            t_p_mb = t_mf_rel = t_mb_rel = t_rpe = t_spe = t_reward = t_score = 0
+            game_terminate              = False
+            human_obs, control_obs_frag = env.reset()
+            control_obs                 = np.append(control_obs_frag, control_obs_extra)
 
-        """control agent choose action"""
-        if STATIC_CONTROL_AGENT:
-            control_action = static_action_map[CONTROL_MODE]
-        else:
-            control_action = ddqn.action(control_obs)
-        cum_ctrl_act[control_action] += 1
+            """control agent choose action"""
+            if STATIC_CONTROL_AGENT:
+                control_action = static_action_map[CONTROL_MODE]
+            else:
+                control_action = ddqn.action(control_obs)
+            cum_ctrl_act[control_action] += 1
 
-        """control act on environment"""
-        if CTRL_AGENTS_ENABLED and (trial % ACTION_PERIOD is 0 or not STATIC_CONTROL_AGENT):
-            _, _, _, _ = env.step([MDP.CONTROL_AGENT_INDEX, control_action])
+            """control act on environment"""
+            if CTRL_AGENTS_ENABLED and (trial % ACTION_PERIOD is 0 or not STATIC_CONTROL_AGENT):
+                _, _, _, _ = env.step([MDP.CONTROL_AGENT_INDEX, control_action])
 
-        while not game_terminate:
-            """human choose action"""
-            human_action = compute_human_action(arb, human_obs, sarsa, forward)
+            while not game_terminate:
+                """human choose action"""
+                human_action = compute_human_action(arb, human_obs, sarsa, forward)
 
-            """human act on environment"""
-            next_human_obs, human_reward, game_terminate, next_control_obs_frag \
-                = env.step((MDP.HUMAN_AGENT_INDEX, human_action))
+                """human act on environment"""
+                next_human_obs, human_reward, game_terminate, next_control_obs_frag \
+                    = env.step((MDP.HUMAN_AGENT_INDEX, human_action))
 
-            """update human agent"""
-            spe = forward.optimize(human_obs, human_action, next_human_obs)
-            next_human_action = compute_human_action(arb, next_human_obs, sarsa, forward) # required by models like SARSA
-            rpe = sarsa.optimize(human_reward, human_action, 
+                """update human agent"""
+                spe = forward.optimize(human_obs, human_action, next_human_obs)
+                next_human_action = compute_human_action(arb, next_human_obs, sarsa, forward) # required by models like SARSA
+                rpe = sarsa.optimize(human_reward, human_action, 
                                     next_human_action, human_obs, next_human_obs)
-            mf_rel, mb_rel, p_mb = arb.add_pe(rpe, spe)
+                mf_rel, mb_rel, p_mb = arb.add_pe(rpe, spe)
+                t_p_mb   += p_mb
+                t_mf_rel += mf_rel
+                t_mb_rel += mb_rel
+                t_rpe    += abs(rpe)
+                t_spe    += spe
+                t_score  += human_reward # if not the terminal state, human_reward is 0, so simply add here is fine
+                
+                """iterators update"""
+                human_obs = next_human_obs
+            if not STATIC_CONTROL_AGENT:
+                env.trans_prob = env.trans_prob_reset # reset transition probability may help DDQN learn something
+
+            p_mb, mf_rel, mb_rel, rpe, spe = list(map(lambda x: x / MDP_STAGES, [
+            t_p_mb, t_mf_rel, t_mb_rel, t_rpe, t_spe])) # map to average value
+
             cum_p_mb   += p_mb
             cum_mf_rel += mf_rel
             cum_mb_rel += mb_rel
-            cum_rpe    += abs(rpe)
+            cum_rpe    += rpe
             cum_spe    += spe
-            score      += human_reward # if not the terminal state, human_reward is 0, so simply add here is fine
-            
-            """iterators update"""
-            human_obs = next_human_obs
-        if not STATIC_CONTROL_AGENT:
-            env.trans_prob = env.trans_prob_reset # reset transition probability may help DDQN learn something
+            cum_score  += t_score
+            cum_reward += t_reward
 
-        avg_p_mb, avg_mf_rel, avg_mb_rel, avg_rpe, avg_spe = list(map(lambda x: x / MDP_STAGES, [
-        cum_p_mb, cum_mf_rel, cum_mb_rel, cum_rpe, cum_spe])) # map to average value
-
-        """update control agent"""
-        ctrl_reward = error_to_reward((avg_rpe, avg_spe, avg_mf_rel, avg_mb_rel), CONTROL_MODE)
-        ctrl_reward += ctrl_reward
-        next_control_obs = np.append(next_control_obs_frag, [avg_rpe, avg_spe])
-        ddqn.optimize(control_obs, control_action, next_control_obs, ctrl_reward)
-        control_obs_extra = [avg_rpe, avg_spe]
-        gData.add_res(trial, [avg_rpe, avg_spe, avg_mf_rel, avg_mb_rel, avg_p_mb,ctrl_reward, score] + list(cum_ctrl_act))
+            """update control agent"""
+            t_reward = error_to_reward((rpe, spe, mf_rel, mb_rel), CONTROL_MODE)
+            t_reward += t_reward
+            next_control_obs = np.append(next_control_obs_frag, [rpe, spe])
+            ddqn.optimize(control_obs, control_action, next_control_obs, t_reward)
+            control_obs_extra = [rpe, spe]
+            gData.add_detail_res(trial + TRIALS_PER_EPISODE * episode, 
+                                [rpe, spe, mf_rel, mb_rel, p_mb, t_reward, t_score] + [control_action])
+        gData.add_res(episode, 
+                      list(map(lambda x: x / TRIALS_PER_EPISODE, 
+                               [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_reward, cum_score] + 
+                               list(cum_ctrl_act))))
 
     if ENABLE_PLOT:
         gData.plot_all_human_param(CONTROL_MODE + ' Human Agent State - parameter set: ' + PARAMETER_SET)
-        gData.plot(CONTROL_MODE, CONTROL_MODE + ' - parameter set: ' + PARAMETER_SET)
+        gData.plot_pe(CONTROL_MODE, CONTROL_MODE + ' - parameter set: ' + PARAMETER_SET)
         gData.plot_action_effect(CONTROL_MODE, CONTROL_MODE + ' Action Summary - parameter set: ' + PARAMETER_SET)
     gData.complete_simulation()

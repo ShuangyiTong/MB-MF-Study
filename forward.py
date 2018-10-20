@@ -8,6 +8,7 @@ from collections import defaultdict
 USE_CFORWARD = True
 try:
     from lib.cforward import cForward
+    print("C++ FORWARD dynamic library found, set as default backend")
 except ImportError:
     print("Forward C++ dynamic library not found, only pure Python version availiable")
     USE_CFORWARD = False

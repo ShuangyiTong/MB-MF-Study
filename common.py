@@ -65,26 +65,30 @@ class AgentCommController:
 class MLP(nn.Module):
     """Multi Layer Perceptron
     """
-    def __init__(self, input_size, output_size):
+    def __init__(self, input_size, output_size, inner_neurons=64):
         """Args:
             input_size (int)
             output_size (int)
         """
         super(MLP, self).__init__() # call parent constructor
         # two fully connected layers
-        self.fc1 = nn.Linear(input_size, 64)
-        self.fc2 = nn.Linear(64, output_size)
+        self.fc1 = nn.Linear(input_size, inner_neurons)
+        self.fc2 = nn.Linear(inner_neurons, inner_neurons)
+        self.fc3 = nn.Linear(inner_neurons, output_size)
         
         # parameters initialization
         nn.init.xavier_normal_(self.fc1.weight)
         nn.init.xavier_normal_(self.fc2.weight)
+        nn.init.xavier_normal_(self.fc3.weight)
         nn.init.normal_(self.fc1.bias)
         nn.init.normal_(self.fc2.bias)
+        nn.init.normal_(self.fc3.bias)
         
     # need to overload the parent class's forward 
     def forward(self, x):
         x = F.relu((self.fc1(x)))
-        x = self.fc2(x)
+        x = F.relu((self.fc2(x)))
+        x = self.fc3(x)
         return x
 
     # autograd will do backward for us
