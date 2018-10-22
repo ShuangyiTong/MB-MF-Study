@@ -1,7 +1,9 @@
 import getopt
 import sys
 import csv
+import os
 import simulation as sim
+import analysis
 import dill as pickle # see https://stackoverflow.com/questions/25348532/can-python-pickle-lambda-functions
 
 from analysis import gData, MODE_MAP
@@ -23,6 +25,9 @@ Usage:
     --disable-c-ext                               Disable using C extension
     --less-control-input                          Less environment input for control agent
     --re-analysis [analysis object pickle file]   Re-run analysis functions
+    --PCA-plot                                    Generate plot against PCA results. Not set by default because
+                                                  previous PCA run shows MB preference gives 99% variance, so comparing 
+                                                  against MB preference is good enough, instead of some principal component
     --episodes [num episodes]                     
     --trials [num trials per episodes]
 """
@@ -36,10 +41,20 @@ ALL_MODE          = False
 ANALYSIS_OBJ      = None
 PARAMETER_FILE    = 'regdata.csv'
 
+def reanalysis(analysis_object):
+    with open(analysis_object, 'rb') as pkl_file:
+        gData = pickle.load(pkl_file)
+    for mode, _ in MODE_MAP.items():
+        try:
+            gData.set_current_mode(mode)
+            gData.generate_summary(mode)
+        except KeyError:
+            print('mode: ' + mode + ' data not found. Skip')
+
 if __name__ == '__main__':
     short_opt = "hdn:"
     long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode", "disable-static-control",
-                 "disable-c-ext", "disable-detail-plot", "less-control-input", "re-analysis="]
+                 "disable-c-ext", "disable-detail-plot", "less-control-input", "re-analysis=", "PCA-plot"]
     try:
         opts, args = getopt.getopt(sys.argv[1:], short_opt, long_opt)
     except getopt.GetoptError as err:
@@ -76,20 +91,22 @@ if __name__ == '__main__':
             sim.ENABLE_PLOT = False
         elif o == "--less-control-input":
             sim.MORE_CONTROL_INPUT = False
+        elif o == "--PCA-plot":
+            analysis.PCA_plot = True
         elif o == "--re-analysis":
             ANALYSIS_OBJ = a
         else:
             assert False, "unhandled option"
 
     if ANALYSIS_OBJ is not None:
-        with open(ANALYSIS_OBJ, 'rb') as pkl_file:
-            gData = pickle.load(pkl_file)
-        for mode, _ in MODE_MAP.items():
-            try:
-                gData.set_current_mode(mode)
-                gData.generate_summary(mode)
-            except KeyError:
-                print('mode: ' + mode + ' data not found. Skip')
+        if os.path.isdir(ANALYSIS_OBJ):
+            analysis_object_list = filter(lambda f: f.endswith('.pkl'), os.listdir(ANALYSIS_OBJ))
+            parent_res_dir = analysis.RESULTS_FOLDER
+            for index, obj in enumerate(analysis_object_list):
+                analysis.RESULTS_FOLDER = parent_res_dir + '/subrun_' + str(index) + '/'
+                reanalysis(os.path.join(ANALYSIS_OBJ, obj))
+        else:
+            reanalysis(ANALYSIS_OBJ)
         exit(0)
 
     gData.trial_separation = sim.TRIALS_PER_EPISODE

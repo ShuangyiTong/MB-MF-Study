@@ -26,4 +26,3 @@ If build failed, check your library and makefile. There are some python version 
 
 ## Known issue
 - `ggplot` may have some issue with pandas, see solutions https://stackoverflow.com/questions/50591982/importerror-cannot-import-name-timestamp
-- Since `pandas 0.23`, copy columns around dataframe has some warnings. My suggestion is go to `/usr/local/lib/python3.6/dist-packages/pandas/core/frame.py:6211`, set sort to True. The line number may be different, but if you have the warning, you can find the line to change.

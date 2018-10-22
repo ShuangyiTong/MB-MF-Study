@@ -15,12 +15,15 @@ import numpy as np
 
 from sklearn.decomposition import PCA
 from sklearn.cross_decomposition import CCA
+from sklearn.manifold import TSNE
 from mdp import MDP
 from tqdm import tqdm
 
 TRIAL_SEPARATION = 80
+PCA_plot = False
+TSNE_plot = True
 FIG_SIZE = (24,14)
-SELECTED_EPISODE = [0, 2, 5, 10, 50, 99]
+SELECTED_EPISODE = [0, 2, 5, 10, 50, 99, 150, 199]
 DEFAULT_TITLE = 'Plot-'
 ACTION_COLUMN = ['action_' + str(action_num) for action_num in range(MDP.NUM_CONTROL_ACTION)]
 HUMAN_DATA_COLUMN = ['MB preference', 'Learning Rate', 'Rel_MF Learning Rate', 'Threshold', 'Inverse Softmax Temp']
@@ -117,9 +120,17 @@ class Analysis:
             entropy_series.append(entropy(action_sequence))
         return entropy_series
 
-    def compare_action_against_human_data(self, title, num_comp=PCA_COMPONENTS, PCA_plot=False):
+    def entropy_plot(self, analyse_df, x_name, y_name, title, file_name):
+        min_entropy = 0
+        max_entropy = 2
+        analyse_df.plot(kind='scatter', x=x_name, y=y_name, c='entropy', vmin=min_entropy, vmax=max_entropy,
+                        title=title, colormap='plasma', marker='s', figsize=FIG_SIZE)
+        save_plt_figure(file_name)
+
+    def compare_action_against_human_data(self, title, num_comp=PCA_COMPONENTS):
         makedir(RESULTS_FOLDER + 'Action_Summary/')
         file_name = lambda x: self.file_name('Action_Summary/' + x)
+
         # calculate PCA only in the human data set
         summary_df = self.human_data_df.copy()
         human_pca  = PCA(n_components=num_comp)
@@ -127,46 +138,51 @@ class Analysis:
         if PCA_plot:
             with open(file_name('PCA projection' + title), 'x') as f:
                 self.write_pca_summary(human_pca, f, num_comp)
+        
+        # calculate t-SNE with component=2
+        entropy_tsne = TSNE(n_components=2)
+        tsne_results = entropy_tsne.fit_transform(self.human_data_df)
 
         # generate entropy on selected episodes
-        min_entropy = 0
-        max_entropy = 4
         for episode in SELECTED_EPISODE:
-            full_title = title + ' Episode ' + str(episode) + ' Action entropy'
             if len(self.current_data[0]) <= episode:
                 print('Episode', episode, 'not found. Skip')
                 continue
-            analyse_df = pd.DataFrame()
-            analyse_df['PCA-1'] = pca_result[:,0]
-            analyse_df['entropy'] = self.get_entropy_series(episode)
-            if num_comp >= 2:
-                # one more PCA axis
+            if PCA_plot:
+                full_title = 'PCA_' + title + ' Episode ' + str(episode) + ' Action entropy'
+                analyse_df = pd.DataFrame()
+                analyse_df['PCA-1'] = pca_result[:,0]
                 analyse_df['PCA-2'] = pca_result[:,1]
-                if PCA_plot:
-                    analyse_df.plot(kind='scatter', x='PCA-1', y='PCA-2', c='entropy', title=full_title, colormap='plasma', \
-                                    vmin=min_entropy, vmax=max_entropy)
-                    save_plt_figure(file_name(full_title))
-            else:
-                if PCA_plot:
-                    analyse_df.plot(kind='scatter', x='PCA-1', y='entropy', title=full_title)
-                    save_plt_figure(file_name(full_title))
+                analyse_df['entropy'] = self.get_entropy_series(episode)
+                self.entropy_plot(analyse_df, 'PCA-1', 'PCA-2', full_title, file_name(full_title))
+            if TSNE_plot:
+                full_title = 't-SNE_' + title + ' Episode ' + str(episode) + ' Action entropy'
+                analyse_df = pd.DataFrame()
+                analyse_df['t-SNE-1'] = tsne_results[:,0]
+                analyse_df['t-SNE-2'] = tsne_results[:,1]
+                analyse_df['entropy'] = self.get_entropy_series(episode)
+                self.entropy_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title))
         
+        # calculate t-SNE with component=1
+        entropy_tsne = TSNE(n_components=1)
+        tsne_results = entropy_tsne.fit_transform(self.human_data_df)
+
         # generate entropy graph on all episode
         full_title = title + ' Action entropy'
-        analyse_df = pd.DataFrame(columns=['PCA-1', 'entropy', 'episode', 'MB Preference'])
+        analyse_df = pd.DataFrame(columns=['PCA-1', 'entropy', 'episode', 'MB Preference', 't-SNE-1'])
         for episode in tqdm(range(len(self.current_data[0]))):
             sub_df = pd.DataFrame()
             sub_df['PCA-1'] = pca_result[:,0]
             sub_df['entropy'] = self.get_entropy_series(episode)
             sub_df['episode'] = float(episode)
-            sub_df['MB Preference'] = self.human_data_df['Inverse Softmax Temp']
+            sub_df['MB Preference'] = self.human_data_df['MB preference']
+            sub_df['t-SNE-1'] = tsne_results[:,0]
             analyse_df = analyse_df.append(sub_df, ignore_index=True)
         if PCA_plot:
-            analyse_df.plot(kind='scatter', x='episode', y='PCA-1', c='entropy', title=full_title, colormap='plasma')
-            save_plt_figure(file_name('PCA_' + full_title))
-        analyse_df.plot(kind='scatter', x='episode', y='MB Preference', c='entropy', vmin=min_entropy, vmax=max_entropy,
-                        title=full_title, colormap='plasma', marker='s')
-        save_plt_figure(file_name('MB_' + full_title))
+            self.entropy_plot(analyse_df, 'episode', 'PCA-1', full_title, file_name('PCA_' + full_title))
+        if TSNE_plot:
+            self.entropy_plot(analyse_df, 'episode', 't-SNE-1', full_title, file_name('t-SNE_' + full_title))
+        self.entropy_plot(analyse_df, 'episode', 'MB Preference', full_title, file_name('MB_' + full_title))
         
     def compare_score_against_human_data(self, title):
         makedir(RESULTS_FOLDER + 'Score_Summary/')

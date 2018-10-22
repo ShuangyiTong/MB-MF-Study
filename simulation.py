@@ -107,6 +107,7 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
     gData.add_human_data([amp_mf_to_mb / amp_mb_to_mf, rl_learning_rate, estimator_learning_rate, threshold, temperature])
     control_obs_extra = INIT_CTRL_INPUT
     for episode in tqdm(range(TOTAL_EPISODES)):
+        # reinitialize human agent every episode
         sarsa   = SARSA(env.action_space[MDP.HUMAN_AGENT_INDEX], learning_rate=rl_learning_rate) # SARSA model-free learner
         forward = FORWARD(env.observation_space[MDP.HUMAN_AGENT_INDEX],
                         env.action_space[MDP.HUMAN_AGENT_INDEX],
