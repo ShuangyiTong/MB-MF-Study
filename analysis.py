@@ -10,7 +10,7 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 import scipy as sc
-import warnings
+import random
 import numpy as np
 
 from sklearn.decomposition import PCA
@@ -116,73 +116,103 @@ class Analysis:
         entropy_series = []
         for detail_df in self.current_detail:
             action_sequence = (detail_df['action'])[episode * self.trial_separation : 
-                                                    (episode + 1) * self.trial_separation - 1]
+                                                    (episode + 1) * self.trial_separation] # seems exclusive, but loc is inclusive
             entropy_series.append(entropy(action_sequence))
         return entropy_series
 
-    def entropy_plot(self, analyse_df, x_name, y_name, title, file_name):
-        min_entropy = 0
-        max_entropy = 2
-        analyse_df.plot(kind='scatter', x=x_name, y=y_name, c='entropy', vmin=min_entropy, vmax=max_entropy,
-                        title=title, colormap='plasma', marker='s', figsize=FIG_SIZE)
+    def scatter_plot(self, analyse_df, x_name, y_name, title, file_name, c_name='entropy', max_val=2, min_val=0, discrete_label=False):
+        if not discrete_label:
+            analyse_df.plot(kind='scatter', x=x_name, y=y_name, c=c_name, vmin=min_val, vmax=max_val,
+                            title=title, colormap='plasma', marker='s', figsize=FIG_SIZE, alpha=0.8)
+        else:
+            analyse_df.plot(kind='scatter', x=x_name, y=y_name, c=c_name, s=100, title=title,
+                            colormap='gist_rainbow', marker='s', figsize=FIG_SIZE, alpha=0.9)
         save_plt_figure(file_name)
 
+    def aggregated_analysis(self, sample_df, feature_series_func, file_name, title, n_pca_comp=1,
+                            feature_label='entropy', in_selected_episodes=True, in_all_episodes=True, simple_analysis=False):
+        if PCA_plot:
+            human_pca  = PCA(n_components=n_pca_comp)
+            pca_result = human_pca.fit_transform(sample_df)
+            with open(file_name('PCA projection' + title), 'x') as f:
+                self.write_pca_summary(human_pca, f, n_pca_comp)
+        
+        if TSNE_plot:
+            # calculate t-SNE with component=2
+            sample_tsne = TSNE(n_components=2, learning_rate=200)
+            tsne_results = sample_tsne.fit_transform(sample_df)
+
+        # generate just based on given data
+        if simple_analysis:
+            full_title = 't-SNE_' + title + ' Action with labeled ' + feature_label
+            analyse_df = pd.DataFrame()
+            analyse_df['t-SNE-1'] = tsne_results[:,0]
+            analyse_df['t-SNE-2'] = tsne_results[:,1]
+            analyse_df[feature_label] = feature_series_func('dummy_var')
+            self.scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title), feature_label, discrete_label=True)
+
+        # generate feature on selected episodes
+        if in_selected_episodes:
+            for episode in SELECTED_EPISODE:
+                if len(self.current_data[0]) <= episode:
+                    print('Episode', episode, 'not found. Skip')
+                    continue
+                if PCA_plot:
+                    full_title = 'PCA_' + title + ' Episode ' + str(episode) + ' Action ' + feature_label
+                    analyse_df = pd.DataFrame()
+                    analyse_df['PCA-1'] = pca_result[:,0]
+                    analyse_df['PCA-2'] = pca_result[:,1]
+                    analyse_df[feature_label] = feature_series_func(episode)
+                    self.scatter_plot(analyse_df, 'PCA-1', 'PCA-2', full_title, file_name(full_title))
+                if TSNE_plot:
+                    full_title = 't-SNE_' + title + ' Episode ' + str(episode) + ' Action ' + feature_label
+                    analyse_df = pd.DataFrame()
+                    analyse_df['t-SNE-1'] = tsne_results[:,0]
+                    analyse_df['t-SNE-2'] = tsne_results[:,1]
+                    analyse_df[feature_label] = feature_series_func(episode)
+                    self.scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title))
+            
+        if in_all_episodes:
+            # calculate t-SNE with component=1
+            sample_tsne = TSNE(n_components=1)
+            tsne_results = sample_tsne.fit_transform(sample_df)
+
+            # generate feature graph on all episode
+            full_title = title + ' Action ' + feature_label
+            analyse_df = pd.DataFrame(columns=['PCA-1', feature_label, 'episode', 'MB Preference', 't-SNE-1'])
+            for episode in tqdm(range(len(self.current_data[0]))):
+                sub_df = pd.DataFrame()
+                sub_df['PCA-1'] = pca_result[:,0]
+                sub_df[feature_label] = feature_series_func(episode)
+                sub_df['episode'] = float(episode)
+                sub_df['MB Preference'] = self.human_data_df['MB preference']
+                sub_df['t-SNE-1'] = tsne_results[:,0]
+                analyse_df = analyse_df.append(sub_df, ignore_index=True)
+            if PCA_plot:
+                self.scatter_plot(analyse_df, 'episode', 'PCA-1', full_title, file_name('PCA_' + full_title))
+            if TSNE_plot:
+                self.scatter_plot(analyse_df, 'episode', 't-SNE-1', full_title, file_name('t-SNE_' + full_title))
+            self.scatter_plot(analyse_df, 'episode', 'MB Preference', full_title, file_name('MB_' + full_title))
+        
+
     def compare_action_against_human_data(self, title, num_comp=PCA_COMPONENTS):
+        SAMPLE_ACTION_SEQUENCES   = 50
+        NUMBER_OF_SAMPLE_SUBJECTS = 10
         makedir(RESULTS_FOLDER + 'Action_Summary/')
         file_name = lambda x: self.file_name('Action_Summary/' + x)
-
-        # calculate PCA only in the human data set
-        summary_df = self.human_data_df.copy()
-        human_pca  = PCA(n_components=num_comp)
-        pca_result = human_pca.fit_transform(summary_df)
-        if PCA_plot:
-            with open(file_name('PCA projection' + title), 'x') as f:
-                self.write_pca_summary(human_pca, f, num_comp)
-        
-        # calculate t-SNE with component=2
-        entropy_tsne = TSNE(n_components=2)
-        tsne_results = entropy_tsne.fit_transform(self.human_data_df)
-
-        # generate entropy on selected episodes
-        for episode in SELECTED_EPISODE:
-            if len(self.current_data[0]) <= episode:
-                print('Episode', episode, 'not found. Skip')
-                continue
-            if PCA_plot:
-                full_title = 'PCA_' + title + ' Episode ' + str(episode) + ' Action entropy'
-                analyse_df = pd.DataFrame()
-                analyse_df['PCA-1'] = pca_result[:,0]
-                analyse_df['PCA-2'] = pca_result[:,1]
-                analyse_df['entropy'] = self.get_entropy_series(episode)
-                self.entropy_plot(analyse_df, 'PCA-1', 'PCA-2', full_title, file_name(full_title))
-            if TSNE_plot:
-                full_title = 't-SNE_' + title + ' Episode ' + str(episode) + ' Action entropy'
-                analyse_df = pd.DataFrame()
-                analyse_df['t-SNE-1'] = tsne_results[:,0]
-                analyse_df['t-SNE-2'] = tsne_results[:,1]
-                analyse_df['entropy'] = self.get_entropy_series(episode)
-                self.entropy_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title))
-        
-        # calculate t-SNE with component=1
-        entropy_tsne = TSNE(n_components=1)
-        tsne_results = entropy_tsne.fit_transform(self.human_data_df)
-
-        # generate entropy graph on all episode
-        full_title = title + ' Action entropy'
-        analyse_df = pd.DataFrame(columns=['PCA-1', 'entropy', 'episode', 'MB Preference', 't-SNE-1'])
-        for episode in tqdm(range(len(self.current_data[0]))):
-            sub_df = pd.DataFrame()
-            sub_df['PCA-1'] = pca_result[:,0]
-            sub_df['entropy'] = self.get_entropy_series(episode)
-            sub_df['episode'] = float(episode)
-            sub_df['MB Preference'] = self.human_data_df['MB preference']
-            sub_df['t-SNE-1'] = tsne_results[:,0]
-            analyse_df = analyse_df.append(sub_df, ignore_index=True)
-        if PCA_plot:
-            self.entropy_plot(analyse_df, 'episode', 'PCA-1', full_title, file_name('PCA_' + full_title))
-        if TSNE_plot:
-            self.entropy_plot(analyse_df, 'episode', 't-SNE-1', full_title, file_name('t-SNE_' + full_title))
-        self.entropy_plot(analyse_df, 'episode', 'MB Preference', full_title, file_name('MB_' + full_title))
+        sample_df = self.human_data_df.copy()
+        # self.aggregated_analysis(sample_df, lambda episode: self.get_entropy_series(episode), file_name, title, num_comp)
+        sample_df = pd.DataFrame(columns=['trial_' + str(trial_num) for trial_num in range(self.trial_separation)])
+        subject_index_seq = []
+        sample_detail_data = random.sample(self.current_detail, NUMBER_OF_SAMPLE_SUBJECTS)
+        for subject_index, detail_df in enumerate(sample_detail_data):
+            for index, episode in enumerate(range(len(self.current_data[0]))[-SAMPLE_ACTION_SEQUENCES:]): # extract last 10 episode action sequences
+                action_sequence = list(map(int, (detail_df['action'])[episode * self.trial_separation : 
+                                                                     (episode + 1) * self.trial_separation].tolist()))
+                sample_df.loc[SAMPLE_ACTION_SEQUENCES * subject_index + index] = action_sequence 
+                subject_index_seq.append(subject_index)
+        self.aggregated_analysis(sample_df, lambda dummy_var: subject_index_seq, file_name, title, num_comp, feature_label='subject', 
+                                 in_all_episodes=False, in_selected_episodes=False, simple_analysis=True)
         
     def compare_score_against_human_data(self, title):
         makedir(RESULTS_FOLDER + 'Score_Summary/')
@@ -218,7 +248,7 @@ class Analysis:
 
     def generate_summary(self, title):
         makedir(RESULTS_FOLDER)
-        self.compare_score_against_human_data(title)
+        # Score is not the concern right now self.compare_score_against_human_data(title)
         self.compare_action_against_human_data(title, 1)
 
     def plot_line(self, left_series_names, right_series_names=None, plot_title=None):

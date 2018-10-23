@@ -169,11 +169,10 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
             cum_rpe    += rpe
             cum_spe    += spe
             cum_score  += t_score
-            cum_reward += t_reward
 
             """update control agent"""
             t_reward = error_to_reward((rpe, spe, mf_rel, mb_rel), CONTROL_MODE)
-            t_reward += t_reward
+            cum_reward += t_reward
             next_control_obs = np.append(next_control_obs_frag, [rpe, spe])
             ddqn.optimize(control_obs, control_action, next_control_obs, t_reward)
             control_obs_extra = [rpe, spe]
