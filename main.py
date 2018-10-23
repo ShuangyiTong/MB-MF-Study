@@ -36,7 +36,7 @@ def usage():
     print(usage_str)
 
 LOAD_PARAM_FILE   = False
-NUM_PARAMETER_SET = 22
+NUM_PARAMETER_SET = 82
 ALL_MODE          = False
 ANALYSIS_OBJ      = None
 PARAMETER_FILE    = 'regdata.csv'

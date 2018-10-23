@@ -157,9 +157,8 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
                 
                 """iterators update"""
                 human_obs = next_human_obs
-            if not STATIC_CONTROL_AGENT:
-                env.trans_prob = env.trans_prob_reset # reset transition probability may help DDQN learn something
-
+            
+            # calculation after one trial
             p_mb, mf_rel, mb_rel, rpe, spe = list(map(lambda x: x / MDP_STAGES, [
             t_p_mb, t_mf_rel, t_mb_rel, t_rpe, t_spe])) # map to average value
 

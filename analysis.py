@@ -129,26 +129,45 @@ class Analysis:
                             colormap='gist_rainbow', marker='s', figsize=FIG_SIZE, alpha=0.9)
         save_plt_figure(file_name)
 
-    def aggregated_analysis(self, sample_df, feature_series_func, file_name, title, n_pca_comp=1,
+    def aggregated_analysis(self, sample_df, feature_series_func, file_name, title, n_pca_comp=1, num_subjects=10, num_sequences=50,
                             feature_label='entropy', in_selected_episodes=True, in_all_episodes=True, simple_analysis=False):
-        if PCA_plot:
-            human_pca  = PCA(n_components=n_pca_comp)
-            pca_result = human_pca.fit_transform(sample_df)
+        # PCA
+        human_pca  = PCA(n_components=n_pca_comp)
+        pca_result = human_pca.fit_transform(sample_df)
+        try:
             with open(file_name('PCA projection' + title), 'x') as f:
                 self.write_pca_summary(human_pca, f, n_pca_comp)
+        except FileExistsError:
+            pass
         
-        if TSNE_plot:
-            # calculate t-SNE with component=2
-            sample_tsne = TSNE(n_components=2, learning_rate=200)
-            tsne_results = sample_tsne.fit_transform(sample_df)
+        # calculate t-SNE with component=2
+        sample_tsne = TSNE(n_components=2, learning_rate=200)
+        tsne_results = sample_tsne.fit_transform(sample_df)
 
         # generate just based on given data
         if simple_analysis:
+            sample_df_copy = sample_df.copy()
+            total_subjects = len(self.current_detail)
+            assert num_sequences == sample_df_copy.shape[0] / total_subjects
+            kl_divergence = []
+            for subject_id in range(total_subjects):
+                sub_tsne = TSNE(n_components=2, perplexity=20)
+                sub_tsne.fit(sample_df_copy.loc[subject_id * num_sequences : 
+                                               (subject_id + 1) * num_sequences - 1])
+                kl_divergence.append((subject_id, sub_tsne.kl_divergence_))
+            kl_divergence.sort(key=lambda pair: pair[1]) # sort by kl_divergence
+            subject_index_seq = feature_series_func('dummy_var')
+            for subject_to_remove in list(map(lambda pair: pair[0], kl_divergence))[num_subjects:]:
+                sample_df_copy.drop(sample_df.index[subject_to_remove * num_sequences : (subject_to_remove + 1) * num_sequences], inplace=True)
+                subject_index_seq[subject_to_remove * num_sequences : (subject_to_remove + 1) * num_sequences] = [-1] * num_sequences # mark to remove
+            subject_index_seq = list(filter(lambda x: x != -1, subject_index_seq))
+            sorted_tsne = TSNE(n_components=2)
+            sorted_tsne_res = sorted_tsne.fit_transform(sample_df_copy)
             full_title = 't-SNE_' + title + ' Action with labeled ' + feature_label
             analyse_df = pd.DataFrame()
-            analyse_df['t-SNE-1'] = tsne_results[:,0]
-            analyse_df['t-SNE-2'] = tsne_results[:,1]
-            analyse_df[feature_label] = feature_series_func('dummy_var')
+            analyse_df['t-SNE-1'] = sorted_tsne_res[:,0]
+            analyse_df['t-SNE-2'] = sorted_tsne_res[:,1]
+            analyse_df[feature_label] = subject_index_seq
             self.scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title), feature_label, discrete_label=True)
 
         # generate feature on selected episodes
@@ -204,15 +223,16 @@ class Analysis:
         # self.aggregated_analysis(sample_df, lambda episode: self.get_entropy_series(episode), file_name, title, num_comp)
         sample_df = pd.DataFrame(columns=['trial_' + str(trial_num) for trial_num in range(self.trial_separation)])
         subject_index_seq = []
-        sample_detail_data = random.sample(self.current_detail, NUMBER_OF_SAMPLE_SUBJECTS)
+        sample_detail_data = self.current_detail # random.sample(self.current_detail, NUMBER_OF_SAMPLE_SUBJECTS)
         for subject_index, detail_df in enumerate(sample_detail_data):
             for index, episode in enumerate(range(len(self.current_data[0]))[-SAMPLE_ACTION_SEQUENCES:]): # extract last 10 episode action sequences
                 action_sequence = list(map(int, (detail_df['action'])[episode * self.trial_separation : 
                                                                      (episode + 1) * self.trial_separation].tolist()))
                 sample_df.loc[SAMPLE_ACTION_SEQUENCES * subject_index + index] = action_sequence 
                 subject_index_seq.append(subject_index)
-        self.aggregated_analysis(sample_df, lambda dummy_var: subject_index_seq, file_name, title, num_comp, feature_label='subject', 
-                                 in_all_episodes=False, in_selected_episodes=False, simple_analysis=True)
+        self.aggregated_analysis(sample_df, lambda dummy_var: subject_index_seq, file_name, title, num_comp, num_subjects=NUMBER_OF_SAMPLE_SUBJECTS,
+                                 num_sequences=SAMPLE_ACTION_SEQUENCES, feature_label='subject', in_all_episodes=False, in_selected_episodes=False, 
+                                 simple_analysis=True)
         
     def compare_score_against_human_data(self, title):
         makedir(RESULTS_FOLDER + 'Score_Summary/')
@@ -248,7 +268,7 @@ class Analysis:
 
     def generate_summary(self, title):
         makedir(RESULTS_FOLDER)
-        # Score is not the concern right now self.compare_score_against_human_data(title)
+        # self.compare_score_against_human_data(title)
         self.compare_action_against_human_data(title, 1)
 
     def plot_line(self, left_series_names, right_series_names=None, plot_title=None):

@@ -131,7 +131,7 @@ class Arbitrator:
         chi_mf = self.mf_rel_estimator.add_pe(rpe) # reliability of model free 
         chi_mb = self.mb_rel_estimator.add_pe(spe) # reliability of model based
         alpha  = self.A_alpha / (1 + exp(self.B_alpha * chi_mf)) # transition rate MF->MB
-        sum_amp= self.amp_mb_to_mf + self.amp_mb_to_mf
+        sum_amp= self.amp_mb_to_mf + self.amp_mf_to_mb
         alpha *= self.amp_mf_to_mb / sum_amp # multiply by amplitude
         beta   = self.A_beta  / (1 + exp(self.B_beta * chi_mb)) # transition rate MB->MF
         beta  *= self.amp_mb_to_mf / sum_amp

@@ -36,9 +36,9 @@ class MDP(gym.Env):
     """Control Agent Action Space
     0 - doing nothing
     1 - set stochastic: apply uniform distribution of transition probability
-    2 - decrease human reward variance with stochastic trans_prob
-    3 - randomize human reward
-    4 - randomize human reward and set stochastic trans_prob
+    2 - set deterministic: set transition probability to original one
+    3 - randomize human reward: reset reward shape
+    4 - reset: randomize human reward and set deterministic transition probability
     """
     NUM_CONTROL_ACTION    = 5
 
@@ -142,9 +142,9 @@ class MDP(gym.Env):
             """
             [lambda env: env, # do nothing
              lambda env: env._set_stochastic_trans_prob(), # uniform trans_prob
-             lambda env: env._output_average_with_stochastic_trans_prob(),
-             lambda env: env._output_reset(),
-             lambda env: env._output_reset_with_stochastic_trans_prob()
+             lambda env: setattr(env, 'trans_prob', env.trans_prob_reset), # reset trans prob to deterministic
+             lambda env: env._output_reset(), # reset reward shape
+             lambda env: env._output_reset_with_deterministic_trans_prob() # reset
             ][action[1]](self)
             return None, None, None, None
         else:
@@ -170,6 +170,10 @@ class MDP(gym.Env):
     def _output_reset_with_stochastic_trans_prob(self):
         self._output_reset()
         self._set_stochastic_trans_prob()
+
+    def _output_reset_with_deterministic_trans_prob(self):
+        self._output_reset()
+        self.trans_prob = self.trans_prob_reset
 
     def _output_reset(self):
         """Reset parameters, used as an action in control agent space
