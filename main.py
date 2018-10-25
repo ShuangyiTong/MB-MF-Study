@@ -12,8 +12,12 @@ usage_str = """
 Model-free, model-based learning simulation
 
 Usage:
+
+Running control parameters:
     -d load parameters from csv file, default is regdata.csv
     -n [number of parameters entries to simulate]
+    --episodes [num episodes]                     
+    --trials [num trials per episodes]
     --set-param-file [parameter file]             Specify the parameter csv file to load
     --mdp-stages [MDP environment stages]         Specify how many stages in MDP environment
     --ctrl-mode <min-spe/max-spe/min-rpe/max-rpe/min-mf-rel/max-mf-rel/min-mb-rel/max-mb-rel> 
@@ -24,12 +28,17 @@ Usage:
     --disable-detail-plot                         Disable plot for each simulation
     --disable-c-ext                               Disable using C extension
     --less-control-input                          Less environment input for control agent
+
+Analysis control parameters:
     --re-analysis [analysis object pickle file]   Re-run analysis functions
     --PCA-plot                                    Generate plot against PCA results. Not set by default because
                                                   previous PCA run shows MB preference gives 99% variance, so comparing 
                                                   against MB preference is good enough, instead of some principal component
-    --episodes [num episodes]                     
-    --trials [num trials per episodes]
+    --learning-curve-plot                         Plot learning curves
+    --use-confidence-interval                     When plot with error bar, use confidence interval instead of IQR
+    --to-excel [subject id]                       Generate a excel file for specific subject with detail sequence of data
+    --disable-action-compare                      Use actions as feature space
+    --enable-score-compare                        Use score as feature space
 """
 
 def usage():
@@ -39,6 +48,7 @@ LOAD_PARAM_FILE   = False
 NUM_PARAMETER_SET = 82
 ALL_MODE          = False
 ANALYSIS_OBJ      = None
+TO_EXCEL          = None
 PARAMETER_FILE    = 'regdata.csv'
 
 def reanalysis(analysis_object):
@@ -50,11 +60,14 @@ def reanalysis(analysis_object):
             gData.generate_summary(mode)
         except KeyError:
             print('mode: ' + mode + ' data not found. Skip')
+    if TO_EXCEL is not None:
+        gData.sequence_to_excel(TO_EXCEL)
 
 if __name__ == '__main__':
     short_opt = "hdn:"
     long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode", "disable-static-control",
-                 "disable-c-ext", "disable-detail-plot", "less-control-input", "re-analysis=", "PCA-plot"]
+                 "disable-c-ext", "disable-detail-plot", "less-control-input", "re-analysis=", "PCA-plot", "learning-curve-plot", "use-confidence-interval",
+                 "to-excel=", "disable-action-compare", "enable-score-compare"]
     try:
         opts, args = getopt.getopt(sys.argv[1:], short_opt, long_opt)
     except getopt.GetoptError as err:
@@ -93,6 +106,16 @@ if __name__ == '__main__':
             sim.MORE_CONTROL_INPUT = False
         elif o == "--PCA-plot":
             analysis.PCA_plot = True
+        elif o == "--learning-curve-plot":
+            analysis.PLOT_LEARNING_CURVE = True
+        elif o == "--use-confidence-interval":
+            analysis.CONFIDENCE_INTERVAL = True
+        elif o == "--disable-action-compare":
+            analysis.ACTION_COMPARE = False
+        elif o == "--enable-score-compare":
+            analysis.SOCRE_COMPARE = True
+        elif o == "--to-excel":
+            TO_EXCEL = int(a)
         elif o == "--re-analysis":
             ANALYSIS_OBJ = a
         else:

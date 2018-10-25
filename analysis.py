@@ -18,10 +18,15 @@ from sklearn.cross_decomposition import CCA
 from sklearn.manifold import TSNE
 from mdp import MDP
 from tqdm import tqdm
+from ggplot import * # ggplot style seems better in discrete scatter plot
 
 TRIAL_SEPARATION = 80
+PLOT_LEARNING_CURVE = False
+CONFIDENCE_INTERVAL = False
 PCA_plot = False
 TSNE_plot = True
+SOCRE_COMPARE = False
+ACTION_COMPARE = True
 FIG_SIZE = (24,14)
 SELECTED_EPISODE = [0, 2, 5, 10, 50, 99, 150, 199]
 DEFAULT_TITLE = 'Plot-'
@@ -124,10 +129,14 @@ class Analysis:
         if not discrete_label:
             analyse_df.plot(kind='scatter', x=x_name, y=y_name, c=c_name, vmin=min_val, vmax=max_val,
                             title=title, colormap='plasma', marker='s', figsize=FIG_SIZE, alpha=0.8)
+            save_plt_figure(file_name)
         else:
-            analyse_df.plot(kind='scatter', x=x_name, y=y_name, c=c_name, s=100, title=title,
-                            colormap='gist_rainbow', marker='s', figsize=FIG_SIZE, alpha=0.9)
-        save_plt_figure(file_name)
+            chart = ggplot(analyse_df, aes(x=x_name, y=y_name, color=c_name)) \
+                    + geom_point(size=70) \
+                    + ggtitle(title) \
+                    + scale_color_brewer(type='qual', palette=3) \
+                    + theme_bw()
+            chart.save(file_name)
 
     def aggregated_analysis(self, sample_df, feature_series_func, file_name, title, n_pca_comp=1, num_subjects=10, num_sequences=50,
                             feature_label='entropy', in_selected_episodes=True, in_all_episodes=True, simple_analysis=False):
@@ -135,8 +144,9 @@ class Analysis:
         human_pca  = PCA(n_components=n_pca_comp)
         pca_result = human_pca.fit_transform(sample_df)
         try:
-            with open(file_name('PCA projection' + title), 'x') as f:
-                self.write_pca_summary(human_pca, f, n_pca_comp)
+            if PCA_plot:
+                with open(file_name('PCA projection' + title), 'x') as f:
+                    self.write_pca_summary(human_pca, f, n_pca_comp)
         except FileExistsError:
             pass
         
@@ -167,7 +177,7 @@ class Analysis:
             analyse_df = pd.DataFrame()
             analyse_df['t-SNE-1'] = sorted_tsne_res[:,0]
             analyse_df['t-SNE-2'] = sorted_tsne_res[:,1]
-            analyse_df[feature_label] = subject_index_seq
+            analyse_df[feature_label] = list(map(str, subject_index_seq))
             self.scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title), feature_label, discrete_label=True)
 
         # generate feature on selected episodes
@@ -212,9 +222,10 @@ class Analysis:
             if TSNE_plot:
                 self.scatter_plot(analyse_df, 'episode', 't-SNE-1', full_title, file_name('t-SNE_' + full_title))
             self.scatter_plot(analyse_df, 'episode', 'MB Preference', full_title, file_name('MB_' + full_title))
-        
 
     def compare_action_against_human_data(self, title, num_comp=PCA_COMPONENTS):
+        if not ACTION_COMPARE:
+            return
         SAMPLE_ACTION_SEQUENCES   = 50
         NUMBER_OF_SAMPLE_SUBJECTS = 10
         makedir(RESULTS_FOLDER + 'Action_Summary/')
@@ -231,10 +242,12 @@ class Analysis:
                 sample_df.loc[SAMPLE_ACTION_SEQUENCES * subject_index + index] = action_sequence 
                 subject_index_seq.append(subject_index)
         self.aggregated_analysis(sample_df, lambda dummy_var: subject_index_seq, file_name, title, num_comp, num_subjects=NUMBER_OF_SAMPLE_SUBJECTS,
-                                 num_sequences=SAMPLE_ACTION_SEQUENCES, feature_label='subject', in_all_episodes=False, in_selected_episodes=False, 
+                                 num_sequences=SAMPLE_ACTION_SEQUENCES, feature_label='Subject ID', in_all_episodes=False, in_selected_episodes=False, 
                                  simple_analysis=True)
         
     def compare_score_against_human_data(self, title):
+        if not SOCRE_COMPARE:
+            return
         makedir(RESULTS_FOLDER + 'Score_Summary/')
         file_name = lambda x: self.file_name('Score_Summary/' + x)
         summary_df = self.human_data_df.copy()
@@ -266,17 +279,49 @@ class Analysis:
         cca_trace_df.plot(figsize=FIG_SIZE, grid=True, title='CCA progression summary '+title)
         save_plt_figure(file_name('CCA progression summary ' + title))
 
+    def sequence_to_excel(self, subject_id, column='action'):
+        excel_writer = pd.ExcelWriter(self.file_name(column + ' sequence' + 'subject-id ' + str(subject_id)) + '.xlsx')
+        sequence_df = pd.DataFrame()
+        for mode, subject_list in self.detail.items():
+            sequence_df[mode] = (subject_list[subject_id])[column]
+        sequence_df.to_excel(excel_writer)
+        excel_writer.save()
+
     def generate_summary(self, title):
         makedir(RESULTS_FOLDER)
-        # self.compare_score_against_human_data(title)
+        self.compare_score_against_human_data(title)
         self.compare_action_against_human_data(title, 1)
+        self.plot_learning_curve(title)
+
+    def plot_learning_curve(self, title): # plot smooth learning curve
+        if not PLOT_LEARNING_CURVE:
+            return
+        for index, data_df in enumerate(self.current_data):
+            smooth_val = len(data_df) / 50
+            smooth_val = int(max(1, smooth_val))
+            ctrl_reward_series = data_df['ctrl_reward']
+            ma = ctrl_reward_series.rolling(smooth_val).mean()
+            plt.figure(figsize=FIG_SIZE)
+            plt.plot(ma.index, ma)
+            plt.xlabel('Episode')
+            plt.ylabel('Reward')
+            if CONFIDENCE_INTERVAL:
+                mstd = ctrl_reward_series.rolling(smooth_val).std()
+                plt.title(title + ' Learning curve 95% confidence interval')
+                plt.fill_between(mstd.index, ma - 1.96 * mstd, ma + 1.96 * mstd, alpha=0.2)
+            else:
+                mmin = ctrl_reward_series.rolling(smooth_val).apply(lambda a: np.quantile(a, 0.25), raw=True)
+                mmax = ctrl_reward_series.rolling(smooth_val).apply(lambda a: np.quantile(a, 0.75), raw=True)
+                plt.title(title + ' Learning curve interquartile range')
+                plt.fill_between(mmin.index, mmin, mmax, alpha=0.2)
+            save_plt_figure(self.file_name('Learning_curve ' + title + ' parameter set: ' + str(index)))
 
     def plot_line(self, left_series_names, right_series_names=None, plot_title=None):
         fig, axes = plt.subplots(nrows=2, ncols=1, gridspec_kw = {'height_ratios': [5, 1]})
         if plot_title is None:
             plot_title = DEFAULT_TITLE + str(len(self.current_data) + 1)
         ax1 = self.current_df.loc[:,left_series_names].plot(ax=axes[0], figsize=FIG_SIZE, grid=True, title=plot_title)
-        ax1.set_xlabel('Trials')
+        ax1.set_xlabel('Episodes')
         if right_series_names is not None:
             ax2 = self.current_df.loc[:,right_series_names].plot(grid=True, ax=ax1, secondary_y=True)
             ax2.legend(loc=1, bbox_to_anchor=(1.10,0.5))

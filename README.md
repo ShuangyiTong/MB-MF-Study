@@ -25,4 +25,5 @@ If build failed, check your library and makefile. There are some python version 
 - `boost::python` and some other boost libraries. So just download the whole boost library and follow their website instruction to build appropriate `boost::python` binary against your installed python interpreter.
 
 ## Known issue
+- `sklearn` may have some trouble with cloudpickle, see solutions https://stackoverflow.com/questions/52596204/the-imp-module-is-deprecated
 - `ggplot` may have some issue with pandas, see solutions https://stackoverflow.com/questions/50591982/importerror-cannot-import-name-timestamp
