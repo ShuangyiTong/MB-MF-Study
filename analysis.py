@@ -27,6 +27,9 @@ PCA_plot = False
 TSNE_plot = True
 SOCRE_COMPARE = False
 ACTION_COMPARE = True
+USE_SELECTED_SUBJECTS = False
+SUBJECTS_TO_PLOT = [9, 14, 32, 63, 22] # SWL10 SWL15 KDJ11 HSY22 KDJ1
+SUBJECTS_TO_PLOT_LABEL = ['Min', '25 percentile', '50 percentile', '75 percentile', 'Max']
 FIG_SIZE = (24,14)
 SELECTED_EPISODE = [0, 2, 5, 10, 50, 99, 150, 199]
 DEFAULT_TITLE = 'Plot-'
@@ -64,6 +67,19 @@ def save_plt_figure(filename):
     plt.close()
 
 class Analysis:
+    """Analysis class
+    
+    The class consists of two categories of methods
+    1. Provide interfaces for collection all kinds of data generated during the simulation
+    2. Provide analysis functions of plotting, calculations
+
+    Since plotting functions keep changing and has many details, it is tedious to maintain clear and 
+    well-documented plotting functions. So I will not give much explanation to these functions. If you want to
+    draw some graphs, it is better to write your own functions instead of trying to understand the old code and modify
+    them. Above all, all the data is well-organized and can be accessed easily.
+
+    The following functions are interfaces, they are designed to maintain and update the data this object hold.
+    """
     def __init__(self):
         self.data = {}
         self.detail = {}
@@ -106,6 +122,22 @@ class Analysis:
     def add_human_data(self, human_data):
         self.human_data_df.loc[len(self.current_data)] = human_data
 
+    """This is the entry point when using --re-analysis option
+
+    makedir should always be called, but other subsequent calls can be removed depending on the needs.
+    """
+    def generate_summary(self, title):
+        makedir(RESULTS_FOLDER)
+        self.compare_score_against_human_data(title)
+        self.compare_action_against_human_data(title, 1)
+        self.plot_learning_curve(title)
+
+    """All the following functions are plotting functions
+
+    If you are not the author of the function, then you should not worry too much about their actual
+    implementation. If you feel hard to understand their logic, it is fine. These code should not mutate
+    any existing data.
+    """
     def write_pca_summary(self, pca_obj, f, num_comp=PCA_COMPONENTS):
         f.write('PCA:\n    Explained_Variance_Ratio:\n        ')
         for index in range(num_comp):
@@ -125,7 +157,7 @@ class Analysis:
             entropy_series.append(entropy(action_sequence))
         return entropy_series
 
-    def scatter_plot(self, analyse_df, x_name, y_name, title, file_name, c_name='entropy', max_val=2, min_val=0, discrete_label=False):
+    def scatter_plot(self, analyse_df, x_name, y_name, title, file_name, c_name='entropy', max_val=2, min_val=0, discrete_label=False, num_discrete_val=10):
         if not discrete_label:
             analyse_df.plot(kind='scatter', x=x_name, y=y_name, c=c_name, vmin=min_val, vmax=max_val,
                             title=title, colormap='plasma', marker='s', figsize=FIG_SIZE, alpha=0.8)
@@ -134,8 +166,11 @@ class Analysis:
             chart = ggplot(analyse_df, aes(x=x_name, y=y_name, color=c_name)) \
                     + geom_point(size=70) \
                     + ggtitle(title) \
-                    + scale_color_brewer(type='qual', palette=3) \
                     + theme_bw()
+            if num_discrete_val > 6:
+                chart += scale_color_brewer(type='qual', palette=3)
+            else:
+                chart += scale_color_brewer(type='qual', palette="Set1")
             chart.save(file_name)
 
     def aggregated_analysis(self, sample_df, feature_series_func, file_name, title, n_pca_comp=1, num_subjects=10, num_sequences=50,
@@ -159,18 +194,25 @@ class Analysis:
             sample_df_copy = sample_df.copy()
             total_subjects = len(self.current_detail)
             assert num_sequences == sample_df_copy.shape[0] / total_subjects
-            kl_divergence = []
-            for subject_id in range(total_subjects):
-                sub_tsne = TSNE(n_components=2, perplexity=20)
-                sub_tsne.fit(sample_df_copy.loc[subject_id * num_sequences : 
-                                               (subject_id + 1) * num_sequences - 1])
-                kl_divergence.append((subject_id, sub_tsne.kl_divergence_))
-            kl_divergence.sort(key=lambda pair: pair[1]) # sort by kl_divergence
             subject_index_seq = feature_series_func('dummy_var')
-            for subject_to_remove in list(map(lambda pair: pair[0], kl_divergence))[num_subjects:]:
+            if not USE_SELECTED_SUBJECTS:
+                kl_divergence = []
+                for subject_id in range(total_subjects):
+                    sub_tsne = TSNE(n_components=2, perplexity=20)
+                    sub_tsne.fit(sample_df_copy.loc[subject_id * num_sequences : 
+                                                (subject_id + 1) * num_sequences - 1])
+                    kl_divergence.append((subject_id, sub_tsne.kl_divergence_))
+                kl_divergence.sort(key=lambda pair: pair[1]) # sort by kl_divergence
+                subject_remove_list = [x[0] for x in kl_divergence]
+            else:
+                subject_remove_list = SUBJECTS_TO_PLOT + list(filter(lambda x: not x in SUBJECTS_TO_PLOT, list(range(total_subjects))))
+                num_subjects  = len(SUBJECTS_TO_PLOT)
+            for subject_to_remove in subject_remove_list[num_subjects:]:
                 sample_df_copy.drop(sample_df.index[subject_to_remove * num_sequences : (subject_to_remove + 1) * num_sequences], inplace=True)
                 subject_index_seq[subject_to_remove * num_sequences : (subject_to_remove + 1) * num_sequences] = [-1] * num_sequences # mark to remove
             subject_index_seq = list(filter(lambda x: x != -1, subject_index_seq))
+            if USE_SELECTED_SUBJECTS:
+                subject_index_seq = [SUBJECTS_TO_PLOT_LABEL[SUBJECTS_TO_PLOT.index(index)] for index in subject_index_seq]
             sorted_tsne = TSNE(n_components=2)
             sorted_tsne_res = sorted_tsne.fit_transform(sample_df_copy)
             full_title = 't-SNE_' + title + ' Action with labeled ' + feature_label
@@ -178,7 +220,8 @@ class Analysis:
             analyse_df['t-SNE-1'] = sorted_tsne_res[:,0]
             analyse_df['t-SNE-2'] = sorted_tsne_res[:,1]
             analyse_df[feature_label] = list(map(str, subject_index_seq))
-            self.scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title), feature_label, discrete_label=True)
+            self.scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title), feature_label, discrete_label=True,
+                              num_discrete_val=num_subjects)
 
         # generate feature on selected episodes
         if in_selected_episodes:
@@ -280,18 +323,12 @@ class Analysis:
         save_plt_figure(file_name('CCA progression summary ' + title))
 
     def sequence_to_excel(self, subject_id, column='action'):
-        excel_writer = pd.ExcelWriter(self.file_name(column + ' sequence' + 'subject-id ' + str(subject_id)) + '.xlsx')
+        excel_writer = pd.ExcelWriter(self.file_name(column + ' sequence' + ' subject-id ' + str(subject_id)) + '.xlsx')
         sequence_df = pd.DataFrame()
         for mode, subject_list in self.detail.items():
             sequence_df[mode] = (subject_list[subject_id])[column]
         sequence_df.to_excel(excel_writer)
         excel_writer.save()
-
-    def generate_summary(self, title):
-        makedir(RESULTS_FOLDER)
-        self.compare_score_against_human_data(title)
-        self.compare_action_against_human_data(title, 1)
-        self.plot_learning_curve(title)
 
     def plot_learning_curve(self, title): # plot smooth learning curve
         if not PLOT_LEARNING_CURVE:
