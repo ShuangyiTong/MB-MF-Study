@@ -28,13 +28,13 @@ TSNE_plot = True
 SOCRE_COMPARE = False
 ACTION_COMPARE = True
 USE_SELECTED_SUBJECTS = False
-SUBJECTS_TO_PLOT = [9, 14, 32, 63, 22] # SWL10 SWL15 KDJ11 HSY22 KDJ1
+SUBJECTS_TO_PLOT = [69, 74, 10, 41, 0] # SWL10 SWL15 KDJ11 HSY22 KDJ1
 SUBJECTS_TO_PLOT_LABEL = ['Min', '25 percentile', '50 percentile', '75 percentile', 'Max']
 FIG_SIZE = (24,14)
 SELECTED_EPISODE = [0, 2, 5, 10, 50, 99, 150, 199]
 DEFAULT_TITLE = 'Plot-'
 ACTION_COLUMN = ['action_' + str(action_num) for action_num in range(MDP.NUM_CONTROL_ACTION)]
-HUMAN_DATA_COLUMN = ['MB preference', 'Learning Rate', 'Rel_MF Learning Rate', 'Threshold', 'Inverse Softmax Temp']
+HUMAN_DATA_COLUMN = ['MB preference', 'Learning Rate', 'Rel_MF Learning Rate', 'Threshold', 'Inverse Softmax Temp', 'Performance']
 DETAIL_COLUMNS = ['rpe', 'spe', 'mf_rel', 'mb_rel', 'p_mb', 'ctrl_reward', 'score', 'action']
 COLUMNS = ['rpe', 'spe', 'mf_rel', 'mb_rel', 'p_mb', 'ctrl_reward', 'score'] + ACTION_COLUMN
 PCA_COMPONENTS = 2
@@ -97,6 +97,7 @@ class Analysis:
     def save_mode(self, mode):
         self.data[mode] = self.current_data.copy()
         self.detail[mode] = self.current_detail.copy()
+        # although human data should be reset in theory, but actually they are the same. So we just let it go
 
     def set_current_mode(self, mode):
         self.current_data = self.data[mode]
@@ -173,6 +174,24 @@ class Analysis:
                 chart += scale_color_brewer(type='qual', palette="Set1")
             chart.save(file_name)
 
+    def kl_divergence_against_performance(self, kl_div_list, filename, title):
+        KL_DIV = 'KL-divergence'
+        SCORE  = 'Negative Log Likelihood Performance'
+        FIT_LINE = 'Ordinary Least Square'
+        df = pd.DataFrame(columns=[KL_DIV, SCORE])
+        df[KL_DIV] = [x[1] for x in kl_div_list]
+        df[SCORE]  = self.human_data_df['Performance']
+        ax = df.plot(kind='scatter', x=SCORE, y=KL_DIV, marker='x', title=title)
+        lowest_10 = df[SCORE].quantile(0.1)
+        highest_10 = df[SCORE].quantile(0.9)
+        filtered_df = df.loc[(df[SCORE] <= lowest_10) | (df[SCORE] >= highest_10)].copy()
+        filtered_df.plot(kind='scatter', x=SCORE, y=KL_DIV, marker='x', c='orange', ax=ax)
+        coefficient = np.polyfit(filtered_df[SCORE], filtered_df[KL_DIV], 1)
+        poly_func = np.poly1d(coefficient)
+        filtered_df[FIT_LINE] = [poly_func(score) for score in filtered_df[SCORE]]
+        filtered_df.plot(x=SCORE, y=FIT_LINE, c='orange', ax=ax)
+        save_plt_figure(filename)
+
     def aggregated_analysis(self, sample_df, feature_series_func, file_name, title, n_pca_comp=1, num_subjects=10, num_sequences=50,
                             feature_label='entropy', in_selected_episodes=True, in_all_episodes=True, simple_analysis=False):
         # PCA
@@ -202,6 +221,8 @@ class Analysis:
                     sub_tsne.fit(sample_df_copy.loc[subject_id * num_sequences : 
                                                 (subject_id + 1) * num_sequences - 1])
                     kl_divergence.append((subject_id, sub_tsne.kl_divergence_))
+                self.kl_divergence_against_performance(kl_divergence, file_name(title + ' Action sequence against Performance'),
+                                                       title + ' Action sequence against Performance')
                 kl_divergence.sort(key=lambda pair: pair[1]) # sort by kl_divergence
                 subject_remove_list = [x[0] for x in kl_divergence]
             else:
@@ -333,13 +354,14 @@ class Analysis:
     def plot_learning_curve(self, title): # plot smooth learning curve
         if not PLOT_LEARNING_CURVE:
             return
-        for index, data_df in enumerate(self.current_data):
+        for index, (data_df, detail_df) in enumerate(zip(self.current_data, self.current_detail)):
             smooth_val = len(data_df) / 50
             smooth_val = int(max(1, smooth_val))
             ctrl_reward_series = data_df['ctrl_reward']
             ma = ctrl_reward_series.rolling(smooth_val).mean()
             plt.figure(figsize=FIG_SIZE)
             plt.plot(ma.index, ma)
+            entire_ax = plt.gca()
             plt.xlabel('Episode')
             plt.ylabel('Reward')
             if CONFIDENCE_INTERVAL:
@@ -351,6 +373,23 @@ class Analysis:
                 mmax = ctrl_reward_series.rolling(smooth_val).apply(lambda a: np.quantile(a, 0.75), raw=True)
                 plt.title(title + ' Learning curve interquartile range')
                 plt.fill_between(mmin.index, mmin, mmax, alpha=0.2)
+            # draw a circle around the episode point
+            episode_index = 0.95 * len(data_df) # select the episode at 95% position, should be well-trained
+            one_episode_df = detail_df.loc[episode_index * self.trial_separation : 
+                                          (episode_index + 1) * self.trial_separation - 1].reset_index(drop=True)
+            plt.scatter(episode_index, ma[episode_index], s=80, linewidths=3, facecolors='none', edgecolors='orange')
+            # plot an episode at well-trained control RL
+            episode_plot_axe = plt.axes([.55, .15, .3, .2])
+            one_episode_df.plot(y='spe', ax=episode_plot_axe)
+            episode_plot_axe.set_xlabel('Trials')
+            one_episode_df.plot(y='rpe', ax=episode_plot_axe, secondary_y=True)
+            entire_ax.annotate("", xy=(0.7, 0.35), xycoords='figure fraction', 
+                xytext=(episode_index, ma[episode_index]), textcoords='data',
+                arrowprops=dict(arrowstyle="fancy",
+                                color="orange",
+                                connectionstyle="arc3,rad=0.3",
+                                ),
+                )
             save_plt_figure(self.file_name('Learning_curve ' + title + ' parameter set: ' + str(index)))
 
     def plot_line(self, left_series_names, right_series_names=None, plot_title=None):

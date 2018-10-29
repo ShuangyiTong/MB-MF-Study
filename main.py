@@ -7,6 +7,7 @@ import analysis
 import dill as pickle # see https://stackoverflow.com/questions/25348532/can-python-pickle-lambda-functions
 
 from analysis import gData, MODE_MAP
+from tqdm import tqdm
 
 usage_str = """
 Model-free, model-based learning simulation
@@ -55,7 +56,7 @@ PARAMETER_FILE    = 'regdata.csv'
 def reanalysis(analysis_object):
     with open(analysis_object, 'rb') as pkl_file:
         gData = pickle.load(pkl_file)
-    for mode, _ in MODE_MAP.items():
+    for mode, _ in tqdm(MODE_MAP.items()):
         try:
             gData.set_current_mode(mode)
             gData.generate_summary(mode)

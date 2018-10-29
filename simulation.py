@@ -94,7 +94,7 @@ def compute_human_action(arbitrator, human_obs, model_free, model_based):
 
 def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=AssocRelEstimator.LEARNING_RATE,
                amp_mb_to_mf=Arbitrator.AMPLITUDE_MB_TO_MF, amp_mf_to_mb=Arbitrator.AMPLITUDE_MF_TO_MB,
-               temperature=Arbitrator.SOFTMAX_TEMPERATURE, rl_learning_rate=SARSA.LEARNING_RATE, PARAMETER_SET='DEFAULT'):
+               temperature=Arbitrator.SOFTMAX_TEMPERATURE, rl_learning_rate=SARSA.LEARNING_RATE, performance=300, PARAMETER_SET='DEFAULT'):
     env     = MDP(MDP_STAGES, more_control_input=MORE_CONTROL_INPUT)
     ddqn    = DoubleDQN(env.observation_space[MDP.CONTROL_AGENT_INDEX],
                         env.action_space[MDP.CONTROL_AGENT_INDEX],
@@ -104,7 +104,7 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
                          amp_mb_to_mf=amp_mb_to_mf, amp_mf_to_mb=amp_mf_to_mb)
 
     gData.new_simulation()
-    gData.add_human_data([amp_mf_to_mb / amp_mb_to_mf, rl_learning_rate, estimator_learning_rate, threshold, temperature])
+    gData.add_human_data([amp_mf_to_mb / amp_mb_to_mf, rl_learning_rate, estimator_learning_rate, threshold, temperature, performance])
     control_obs_extra = INIT_CTRL_INPUT
     for episode in tqdm(range(TOTAL_EPISODES)):
         # reinitialize human agent every episode
