@@ -6,9 +6,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
+import os
 
 from collections import namedtuple
 from collections import defaultdict
+
+def makedir(directory):
+    try:
+        os.makedirs(directory)
+    except OSError:
+        pass
 
 def make_epsilon_greedy_policy(Q, epsilon, nA):
     """Creates an epsilon-greedy policy based on a given Q-function and epsilon.

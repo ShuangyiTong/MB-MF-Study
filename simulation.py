@@ -3,6 +3,7 @@
 """
 import torch
 import numpy as np
+import dill as pickle # see https://stackoverflow.com/questions/25348532/can-python-pickle-lambda-functions
 
 from tqdm import tqdm
 from mdp import MDP
@@ -10,7 +11,8 @@ from ddqn import DoubleDQN
 from sarsa import SARSA
 from forward import FORWARD
 from arbitrator import BayesRelEstimator, AssocRelEstimator, Arbitrator
-from analysis import gData
+from analysis import gData, RESULTS_FOLDER
+from common import makedir
 
 # preset constants
 MDP_STAGES            = 2
@@ -32,10 +34,11 @@ CONTROL_MODE          = DEFAULT_CONTROL_MODE
 CTRL_AGENTS_ENABLED   = True
 RPE_DISCOUNT_FACTOR   = 0.003
 ACTION_PERIOD         = 3
-STATIC_CONTROL_AGENT  = True
+STATIC_CONTROL_AGENT  = False
 ENABLE_PLOT           = True
 DISABLE_C_EXTENSION   = False
 MORE_CONTROL_INPUT    = True
+SAVE_CTRL_RL          = False
 
 error_reward_map = {
     # x should be a 4-tuple: rpe, spe, mf_rel, mb_rel
@@ -182,6 +185,8 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
                                [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_reward, cum_score] + 
                                list(cum_ctrl_act))))
 
+    makedir(RESULTS_FOLDER + 'ControlRL/' + CONTROL_MODE)
+    torch.save(ddqn.eval_Q.state_dict(), gData.file_name('ControlRL/' + CONTROL_MODE + '/MLP_OBJ_'))
     if ENABLE_PLOT:
         gData.plot_all_human_param(CONTROL_MODE + ' Human Agent State - parameter set: ' + PARAMETER_SET)
         gData.plot_pe(CONTROL_MODE, CONTROL_MODE + ' - parameter set: ' + PARAMETER_SET)

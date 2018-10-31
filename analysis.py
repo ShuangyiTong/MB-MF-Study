@@ -19,6 +19,7 @@ from sklearn.manifold import TSNE
 from mdp import MDP
 from tqdm import tqdm
 from ggplot import * # ggplot style seems better in discrete scatter plot
+from common import makedir
 
 TRIAL_SEPARATION = 80
 PLOT_LEARNING_CURVE = False
@@ -50,11 +51,6 @@ MODE_MAP = {
     'min-rpe-max-spe' : ['spe', 'rpe']
 }
 RESULTS_FOLDER = 'history_results/' + '{:%Y-%m-%d}'.format(datetime.datetime.now()) + '/' + '{:%Y-%m-%d-%H-%M-%S}'.format(datetime.datetime.now()) + '/'
-def makedir(directory):
-    try:
-        os.makedirs(directory)
-    except OSError:
-        pass
 
 def entropy(sequence):
     p_data  = sequence.value_counts() / len(sequence) # calculates the probabilities

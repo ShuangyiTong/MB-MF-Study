@@ -25,10 +25,11 @@ Running control parameters:
                                                   Choose control agent mode
     --disable-control                             Disable control agents
     --all-mode                                    Execute all control mode
-    --disable-static-control                      Use DDQN control instead of static control
+    --enable-static-control                       Use static control instead of DDQN control
     --disable-detail-plot                         Disable plot for each simulation
     --disable-c-ext                               Disable using C extension
     --less-control-input                          Less environment input for control agent
+    --save-ctrl-rl                                Save control RL agent object for further use
 
 Analysis control parameters:
     --re-analysis [analysis object pickle file]   Re-run analysis functions
@@ -67,9 +68,9 @@ def reanalysis(analysis_object):
 
 if __name__ == '__main__':
     short_opt = "hdn:"
-    long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode", "disable-static-control",
+    long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode", "enable-static-control",
                  "disable-c-ext", "disable-detail-plot", "less-control-input", "re-analysis=", "PCA-plot", "learning-curve-plot", "use-confidence-interval",
-                 "to-excel=", "disable-action-compare", "enable-score-compare", "use-selected-subjects"]
+                 "to-excel=", "disable-action-compare", "enable-score-compare", "use-selected-subjects", "save-ctrl-rl"]
     try:
         opts, args = getopt.getopt(sys.argv[1:], short_opt, long_opt)
     except getopt.GetoptError as err:
@@ -98,14 +99,16 @@ if __name__ == '__main__':
             ALL_MODE = True
         elif o == "-n":
             NUM_PARAMETER_SET = int(a)
-        elif o == "--disable-static-control":
-            sim.STATIC_CONTROL_AGENT = False
+        elif o == "--enable-static-control":
+            sim.STATIC_CONTROL_AGENT = True
         elif o == "--disable-c-ext":
             sim.DISABLE_C_EXTENSION = True
         elif o == "--disable-detail-plot":
             sim.ENABLE_PLOT = False
         elif o == "--less-control-input":
             sim.MORE_CONTROL_INPUT = False
+        elif o == "--save-ctrl-rl":
+            sim.SAVE_CTRL_RL = True
         elif o == "--PCA-plot":
             analysis.PCA_plot = True
         elif o == "--learning-curve-plot":
