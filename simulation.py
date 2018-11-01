@@ -21,7 +21,7 @@ TRIALS_PER_EPISODE    = 80
 SPE_LOW_THRESHOLD     = 0.3
 SPE_HIGH_THRESHOLD    = 0.5
 RPE_LOW_THRESHOLD     = 4
-RPE_HIGH_THRESHOLD    = 7
+RPE_HIGH_THRESHOLD    = 15
 MF_REL_HIGH_THRESHOLD = 0.8
 MF_REL_LOW_THRESHOLD  = 0.5
 MB_REL_HIGH_THRESHOLD = 0.7
@@ -186,7 +186,8 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
                                list(cum_ctrl_act))))
 
     makedir(RESULTS_FOLDER + 'ControlRL/' + CONTROL_MODE)
-    torch.save(ddqn.eval_Q.state_dict(), gData.file_name('ControlRL/' + CONTROL_MODE + '/MLP_OBJ_'))
+    if SAVE_CTRL_RL:
+        torch.save(ddqn.eval_Q.state_dict(), gData.file_name('ControlRL/' + CONTROL_MODE + '/MLP_OBJ_'))
     if ENABLE_PLOT:
         gData.plot_all_human_param(CONTROL_MODE + ' Human Agent State - parameter set: ' + PARAMETER_SET)
         gData.plot_pe(CONTROL_MODE, CONTROL_MODE + ' - parameter set: ' + PARAMETER_SET)

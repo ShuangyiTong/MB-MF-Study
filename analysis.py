@@ -16,6 +16,7 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.cross_decomposition import CCA
 from sklearn.manifold import TSNE
+from scipy.stats import linregress
 from mdp import MDP
 from tqdm import tqdm
 from ggplot import * # ggplot style seems better in discrete scatter plot
@@ -31,6 +32,7 @@ ACTION_COMPARE = True
 USE_SELECTED_SUBJECTS = False
 SUBJECTS_TO_PLOT = [69, 74, 10, 41, 0] # SWL10 SWL15 KDJ11 HSY22 KDJ1
 SUBJECTS_TO_PLOT_LABEL = ['Min', '25 percentile', '50 percentile', '75 percentile', 'Max']
+HEAD_AND_TAIL_SUBJECTS = False
 FIG_SIZE = (24,14)
 SELECTED_EPISODE = [0, 2, 5, 10, 50, 99, 150, 199]
 DEFAULT_TITLE = 'Plot-'
@@ -75,6 +77,20 @@ class Analysis:
     them. Above all, all the data is well-organized and can be accessed easily.
 
     The following functions are interfaces, they are designed to maintain and update the data this object hold.
+
+    self.data is a dict with key being the mode and a list of data frames being the value
+    self.current_data is a list of data frames, being one value in self.data. The length of the list is
+    the number of human subjects parameter sets have been used.
+    self.current_df is one data frame in self.current_data, its column is COLUMNS
+
+    self.detail, self.current_detail, self.current_detail_df have the same relationship as self.data, self.current_data, self.current_df.
+    Except the columns are DETAIL_COLUMNS. And it is trial based, different from self.data episode based. Therefore, using
+    self.detail can generate self.data, but it is very slow and inconvenient. Hence it is better to view self.data as a cache of
+    self.detail.
+
+    Also, as we can see here, self.current_detail refers to a value in self.detail; self.current_detail_df refers to a value in
+    self.current_detail. Hence, they are just iterators in a object scope (set by self.set_current_mode etc.), which is 
+    handy to deal with all the data.
     """
     def __init__(self):
         self.data = {}
@@ -125,17 +141,18 @@ class Analysis:
     """
     def generate_summary(self, title):
         makedir(RESULTS_FOLDER)
-        self.compare_score_against_human_data(title)
-        self.compare_action_against_human_data(title, 1)
-        self.plot_learning_curve(title)
+        self._compare_score_against_human_data(title)
+        self._compare_action_against_human_data(title, 1)
+        self._plot_learning_curve(title)
 
     """All the following functions are plotting functions
 
     If you are not the author of the function, then you should not worry too much about their actual
-    implementation. If you feel hard to understand their logic, it is fine. These code should not mutate
+    implementation. If you feel hard to understand their logic, it is fine, write your own code based on the
+    previous comments on the data structure instead of trying to understand other's code. These code should not mutate
     any existing data.
     """
-    def write_pca_summary(self, pca_obj, f, num_comp=PCA_COMPONENTS):
+    def _write_pca_summary(self, pca_obj, f, num_comp=PCA_COMPONENTS):
         f.write('PCA:\n    Explained_Variance_Ratio:\n        ')
         for index in range(num_comp):
             f.write('pc' + str(index) + ': ' + str(pca_obj.explained_variance_ratio_[index]) + ' ')
@@ -146,7 +163,7 @@ class Analysis:
                 f.write(' ' + str(ratio))
             f.write('\n')
 
-    def get_entropy_series(self, episode):
+    def _get_entropy_series(self, episode):
         entropy_series = []
         for detail_df in self.current_detail:
             action_sequence = (detail_df['action'])[episode * self.trial_separation : 
@@ -154,7 +171,7 @@ class Analysis:
             entropy_series.append(entropy(action_sequence))
         return entropy_series
 
-    def scatter_plot(self, analyse_df, x_name, y_name, title, file_name, c_name='entropy', max_val=2, min_val=0, discrete_label=False, num_discrete_val=10):
+    def _scatter_plot(self, analyse_df, x_name, y_name, title, file_name, c_name='entropy', max_val=2, min_val=0, discrete_label=False, num_discrete_val=10):
         if not discrete_label:
             analyse_df.plot(kind='scatter', x=x_name, y=y_name, c=c_name, vmin=min_val, vmax=max_val,
                             title=title, colormap='plasma', marker='s', figsize=FIG_SIZE, alpha=0.8)
@@ -170,7 +187,7 @@ class Analysis:
                 chart += scale_color_brewer(type='qual', palette="Set1")
             chart.save(file_name)
 
-    def kl_divergence_against_performance(self, kl_div_list, filename, title):
+    def _kl_divergence_against_performance(self, kl_div_list, filename, title):
         KL_DIV = 'KL-divergence'
         SCORE  = 'Negative Log Likelihood Performance'
         FIT_LINE = 'Ordinary Least Square'
@@ -182,13 +199,14 @@ class Analysis:
         highest_10 = df[SCORE].quantile(0.9)
         filtered_df = df.loc[(df[SCORE] <= lowest_10) | (df[SCORE] >= highest_10)].copy()
         filtered_df.plot(kind='scatter', x=SCORE, y=KL_DIV, marker='x', c='orange', ax=ax)
-        coefficient = np.polyfit(filtered_df[SCORE], filtered_df[KL_DIV], 1)
+        slope, intercept, r_value, p_value, _ = linregress(filtered_df[SCORE], filtered_df[KL_DIV])
+        coefficient = (slope, intercept) # linear coefficient
         poly_func = np.poly1d(coefficient)
         filtered_df[FIT_LINE] = [poly_func(score) for score in filtered_df[SCORE]]
-        filtered_df.plot(x=SCORE, y=FIT_LINE, c='orange', ax=ax)
+        filtered_df.plot(x=SCORE, y=FIT_LINE, c='orange', ax=ax, label="R Squared: {:.3f}\np-value: {:.3f}".format(r_value**2, p_value))
         save_plt_figure(filename)
 
-    def aggregated_analysis(self, sample_df, feature_series_func, file_name, title, n_pca_comp=1, num_subjects=10, num_sequences=50,
+    def _aggregated_analysis(self, sample_df, feature_series_func, file_name, title, n_pca_comp=1, head_subjects=10, tail_subjects=None, num_sequences=50,
                             feature_label='entropy', in_selected_episodes=True, in_all_episodes=True, simple_analysis=False):
         # PCA
         human_pca  = PCA(n_components=n_pca_comp)
@@ -196,7 +214,7 @@ class Analysis:
         try:
             if PCA_plot:
                 with open(file_name('PCA projection' + title), 'x') as f:
-                    self.write_pca_summary(human_pca, f, n_pca_comp)
+                    self._write_pca_summary(human_pca, f, n_pca_comp)
         except FileExistsError:
             pass
         
@@ -209,35 +227,49 @@ class Analysis:
             sample_df_copy = sample_df.copy()
             total_subjects = len(self.current_detail)
             assert num_sequences == sample_df_copy.shape[0] / total_subjects
-            subject_index_seq = feature_series_func('dummy_var')
-            if not USE_SELECTED_SUBJECTS:
+            feature_index_seq = feature_series_func('dummy_var')
+            if USE_SELECTED_SUBJECTS:
+                subject_remove_list = SUBJECTS_TO_PLOT + list(filter(lambda x: not x in SUBJECTS_TO_PLOT, list(range(total_subjects))))
+                num_subjects  = len(SUBJECTS_TO_PLOT)
+                feature_index_seq = [SUBJECTS_TO_PLOT_LABEL[SUBJECTS_TO_PLOT.index(index)] for index in feature_index_seq]
+            else:
                 kl_divergence = []
                 for subject_id in range(total_subjects):
                     sub_tsne = TSNE(n_components=2, perplexity=20)
                     sub_tsne.fit(sample_df_copy.loc[subject_id * num_sequences : 
                                                 (subject_id + 1) * num_sequences - 1])
                     kl_divergence.append((subject_id, sub_tsne.kl_divergence_))
-                self.kl_divergence_against_performance(kl_divergence, file_name(title + ' Action sequence against Performance'),
+                self._kl_divergence_against_performance(kl_divergence, file_name(title + ' Action sequence against Performance'),
                                                        title + ' Action sequence against Performance')
-                kl_divergence.sort(key=lambda pair: pair[1]) # sort by kl_divergence
-                subject_remove_list = [x[0] for x in kl_divergence]
-            else:
-                subject_remove_list = SUBJECTS_TO_PLOT + list(filter(lambda x: not x in SUBJECTS_TO_PLOT, list(range(total_subjects))))
-                num_subjects  = len(SUBJECTS_TO_PLOT)
-            for subject_to_remove in subject_remove_list[num_subjects:]:
-                sample_df_copy.drop(sample_df.index[subject_to_remove * num_sequences : (subject_to_remove + 1) * num_sequences], inplace=True)
-                subject_index_seq[subject_to_remove * num_sequences : (subject_to_remove + 1) * num_sequences] = [-1] * num_sequences # mark to remove
-            subject_index_seq = list(filter(lambda x: x != -1, subject_index_seq))
-            if USE_SELECTED_SUBJECTS:
-                subject_index_seq = [SUBJECTS_TO_PLOT_LABEL[SUBJECTS_TO_PLOT.index(index)] for index in subject_index_seq]
+                if tail_subjects is not None:
+                    zip_list = []
+                    for subject_id in range(total_subjects):
+                        zip_list.append((subject_id, feature_index_seq))
+                    zip_list.sort(key=lambda pair: pair[1]) # sort by feature sequence because now we have tail subjects to compare
+                    subject_remove_list = [x[0] for x in zip_list]
+                else:
+                    kl_divergence.sort(key=lambda pair: pair[1]) # sort by kl_divergence
+                    subject_remove_list = [x[0] for x in kl_divergence]
+                tail_cut_index = len(subject_remove_list) if tail_subjects is None else len(subject_remove_list) - tail_subjects
+                for subject_to_remove in subject_remove_list[head_subjects:tail_cut_index]:
+                    sample_df_copy.drop(sample_df.index[subject_to_remove * num_sequences : (subject_to_remove + 1) * num_sequences], inplace=True)
+                    feature_index_seq[subject_to_remove * num_sequences : (subject_to_remove + 1) * num_sequences] = [-1] * num_sequences # mark to remove
+                feature_index_seq = list(filter(lambda x: x != -1, feature_index_seq))
             sorted_tsne = TSNE(n_components=2)
             sorted_tsne_res = sorted_tsne.fit_transform(sample_df_copy)
-            full_title = 't-SNE_' + title + ' Action with labeled ' + feature_label
+            full_title = 't-SNE ' + title + ' Action Sequence '
             analyse_df = pd.DataFrame()
             analyse_df['t-SNE-1'] = sorted_tsne_res[:,0]
             analyse_df['t-SNE-2'] = sorted_tsne_res[:,1]
-            analyse_df[feature_label] = list(map(str, subject_index_seq))
-            self.scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title), feature_label, discrete_label=True,
+            assert analyse_df.shape[0] == (tail_subjects + head_subjects) * num_sequences
+            if tail_subjects is not None:
+                analyse_df[feature_label] = feature_index_seq # numerical
+                analyse_df.plot(kind='scatter', x='t-SNE-1', y='t-SNE-2', c=feature_label,
+                                title=full_title, colormap='jet', alpha=0.8)
+                save_plt_figure(file_name(full_title))
+            else:
+                analyse_df[feature_label] = list(map(str, feature_index_seq)) # discrete
+                self._scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title), feature_label, discrete_label=True,
                               num_discrete_val=num_subjects)
 
         # generate feature on selected episodes
@@ -252,14 +284,14 @@ class Analysis:
                     analyse_df['PCA-1'] = pca_result[:,0]
                     analyse_df['PCA-2'] = pca_result[:,1]
                     analyse_df[feature_label] = feature_series_func(episode)
-                    self.scatter_plot(analyse_df, 'PCA-1', 'PCA-2', full_title, file_name(full_title))
+                    self._scatter_plot(analyse_df, 'PCA-1', 'PCA-2', full_title, file_name(full_title))
                 if TSNE_plot:
                     full_title = 't-SNE_' + title + ' Episode ' + str(episode) + ' Action ' + feature_label
                     analyse_df = pd.DataFrame()
                     analyse_df['t-SNE-1'] = tsne_results[:,0]
                     analyse_df['t-SNE-2'] = tsne_results[:,1]
                     analyse_df[feature_label] = feature_series_func(episode)
-                    self.scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title))
+                    self._scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title))
             
         if in_all_episodes:
             # calculate t-SNE with component=1
@@ -278,34 +310,40 @@ class Analysis:
                 sub_df['t-SNE-1'] = tsne_results[:,0]
                 analyse_df = analyse_df.append(sub_df, ignore_index=True)
             if PCA_plot:
-                self.scatter_plot(analyse_df, 'episode', 'PCA-1', full_title, file_name('PCA_' + full_title))
+                self._scatter_plot(analyse_df, 'episode', 'PCA-1', full_title, file_name('PCA_' + full_title))
             if TSNE_plot:
-                self.scatter_plot(analyse_df, 'episode', 't-SNE-1', full_title, file_name('t-SNE_' + full_title))
-            self.scatter_plot(analyse_df, 'episode', 'MB Preference', full_title, file_name('MB_' + full_title))
+                self._scatter_plot(analyse_df, 'episode', 't-SNE-1', full_title, file_name('t-SNE_' + full_title))
+            self._scatter_plot(analyse_df, 'episode', 'MB Preference', full_title, file_name('MB_' + full_title))
 
-    def compare_action_against_human_data(self, title, num_comp=PCA_COMPONENTS):
+    def _compare_action_against_human_data(self, title, num_comp=PCA_COMPONENTS):
         if not ACTION_COMPARE:
             return
         SAMPLE_ACTION_SEQUENCES   = 50
-        NUMBER_OF_SAMPLE_SUBJECTS = 10
+        NUMBER_OF_SAMPLE_SUBJECTS = 10 if not HEAD_AND_TAIL_SUBJECTS else 9
+        NUMBER_OF_TAIL_SUBJECTS   = None if not HEAD_AND_TAIL_SUBJECTS else 9
         makedir(RESULTS_FOLDER + 'Action_Summary/')
         file_name = lambda x: self.file_name('Action_Summary/' + x)
         sample_df = self.human_data_df.copy()
-        # self.aggregated_analysis(sample_df, lambda episode: self.get_entropy_series(episode), file_name, title, num_comp)
+        # self._aggregated_analysis(sample_df, lambda episode: self._get_entropy_series(episode), file_name, title, num_comp)
         sample_df = pd.DataFrame(columns=['trial_' + str(trial_num) for trial_num in range(self.trial_separation)])
-        subject_index_seq = []
+        feature_seq = []
         sample_detail_data = self.current_detail # random.sample(self.current_detail, NUMBER_OF_SAMPLE_SUBJECTS)
         for subject_index, detail_df in enumerate(sample_detail_data):
             for index, episode in enumerate(range(len(self.current_data[0]))[-SAMPLE_ACTION_SEQUENCES:]): # extract last 10 episode action sequences
                 action_sequence = list(map(int, (detail_df['action'])[episode * self.trial_separation : 
                                                                      (episode + 1) * self.trial_separation].tolist()))
-                sample_df.loc[SAMPLE_ACTION_SEQUENCES * subject_index + index] = action_sequence 
-                subject_index_seq.append(subject_index)
-        self.aggregated_analysis(sample_df, lambda dummy_var: subject_index_seq, file_name, title, num_comp, num_subjects=NUMBER_OF_SAMPLE_SUBJECTS,
-                                 num_sequences=SAMPLE_ACTION_SEQUENCES, feature_label='Subject ID', in_all_episodes=False, in_selected_episodes=False, 
-                                 simple_analysis=True)
+                sample_df.loc[SAMPLE_ACTION_SEQUENCES * subject_index + index] = action_sequence
+                if HEAD_AND_TAIL_SUBJECTS:
+                    feature_seq.append(self.human_data_df['Performance'].loc[subject_index])
+                else:
+                    feature_seq.append(subject_index)
+        feature_series_func = lambda dummy_var: feature_seq
+        self._aggregated_analysis(sample_df, feature_series_func, file_name, title, num_comp, head_subjects=NUMBER_OF_SAMPLE_SUBJECTS,
+                                 tail_subjects=NUMBER_OF_TAIL_SUBJECTS, num_sequences=SAMPLE_ACTION_SEQUENCES, 
+                                 feature_label='Subject ID' if not HEAD_AND_TAIL_SUBJECTS else 'Negative Log Likelihood Performance', 
+                                 in_all_episodes=False, in_selected_episodes=False, simple_analysis=True)
         
-    def compare_score_against_human_data(self, title):
+    def _compare_score_against_human_data(self, title):
         if not SOCRE_COMPARE:
             return
         makedir(RESULTS_FOLDER + 'Score_Summary/')
@@ -323,7 +361,7 @@ class Analysis:
         pca = PCA(n_components=PCA_COMPONENTS)
         pca.fit(summary_df)
         with open(file_name('Score Statistics Summary ' + title), 'x') as f:
-            self.write_pca_summary(pca, f)
+            self._write_pca_summary(pca, f)
             f.write('\nCCA:\n    X weights:\n')
             f.write('        ' + ' '.join(map(str, cca.x_weights_)))
             f.write('\n    Y weights\n')
@@ -347,7 +385,7 @@ class Analysis:
         sequence_df.to_excel(excel_writer)
         excel_writer.save()
 
-    def plot_learning_curve(self, title): # plot smooth learning curve
+    def _plot_learning_curve(self, title): # plot smooth learning curve
         if not PLOT_LEARNING_CURVE:
             return
         for index, (data_df, detail_df) in enumerate(zip(self.current_data, self.current_detail)):
@@ -379,6 +417,13 @@ class Analysis:
             one_episode_df.plot(y='spe', ax=episode_plot_axe)
             episode_plot_axe.set_xlabel('Trials')
             one_episode_df.plot(y='rpe', ax=episode_plot_axe, secondary_y=True)
+            action_series = one_episode_df['action']
+            episode_plot_axe.set_xticks(np.arange(0, self.trial_separation, 1))
+            # annotate x-axis with action number
+            for action_index, action in enumerate(action_series):
+                episode_plot_axe.annotate(str(int(action)), xy=((action_index + 1) / (self.trial_separation + 1), 0.05), 
+                                          xycoords='axes fraction', annotation_clip=False)
+            # annotate on the big picture
             entire_ax.annotate("", xy=(0.7, 0.35), xycoords='figure fraction', 
                 xytext=(episode_index, ma[episode_index]), textcoords='data',
                 arrowprops=dict(arrowstyle="fancy",

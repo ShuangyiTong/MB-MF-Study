@@ -42,6 +42,7 @@ Analysis control parameters:
     --disable-action-compare                      Use actions as feature space
     --enable-score-compare                        Use score as feature space
     --use-selected-subjects                       Use selected subjects, defualt is min 25 50 75 max five subjects
+    --head-tail-subjects                          Use head and tail subjects to emphasize the difference
 """
 
 def usage():
@@ -70,7 +71,7 @@ if __name__ == '__main__':
     short_opt = "hdn:"
     long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode", "enable-static-control",
                  "disable-c-ext", "disable-detail-plot", "less-control-input", "re-analysis=", "PCA-plot", "learning-curve-plot", "use-confidence-interval",
-                 "to-excel=", "disable-action-compare", "enable-score-compare", "use-selected-subjects", "save-ctrl-rl"]
+                 "to-excel=", "disable-action-compare", "enable-score-compare", "use-selected-subjects", "save-ctrl-rl", "head-tail-subjects"]
     try:
         opts, args = getopt.getopt(sys.argv[1:], short_opt, long_opt)
     except getopt.GetoptError as err:
@@ -121,6 +122,8 @@ if __name__ == '__main__':
             analysis.SOCRE_COMPARE = True
         elif o == "--use-selected-subjects":
             analysis.USE_SELECTED_SUBJECTS = True
+        elif o == "--head-tail-subjects":
+            analysis.HEAD_AND_TAIL_SUBJECTS = True
         elif o == "--to-excel":
             TO_EXCEL = int(a)
         elif o == "--re-analysis":
