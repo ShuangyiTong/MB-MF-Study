@@ -16,7 +16,7 @@ import numpy as np
 from sklearn.decomposition import PCA
 from sklearn.cross_decomposition import CCA
 from sklearn.manifold import TSNE
-from scipy.stats import linregress
+from scipy.stats import linregress, sem
 from mdp import MDP
 from tqdm import tqdm
 from ggplot import * # ggplot style seems better in discrete scatter plot
@@ -25,10 +25,13 @@ from common import makedir
 TRIAL_SEPARATION = 80
 PLOT_LEARNING_CURVE = False
 CONFIDENCE_INTERVAL = False
+SMOOTHED_EPISODE = True
+EPISODE_SMOOTH_WINDOW = 50
 PCA_plot = False
 TSNE_plot = True
 SOCRE_COMPARE = False
 ACTION_COMPARE = True
+HUMAN_DATA_COMPARE = False
 USE_SELECTED_SUBJECTS = False
 SUBJECTS_TO_PLOT = [69, 74, 10, 41, 0] # SWL10 SWL15 KDJ11 HSY22 KDJ1
 SUBJECTS_TO_PLOT_LABEL = ['Min', '25 percentile', '50 percentile', '75 percentile', 'Max']
@@ -141,8 +144,10 @@ class Analysis:
     """
     def generate_summary(self, title):
         makedir(RESULTS_FOLDER)
-        self._compare_score_against_human_data(title)
-        self._compare_action_against_human_data(title, 1)
+        self._compare_action_against_performance(title)
+        if HUMAN_DATA_COMPARE:
+            self._compare_score_against_human_data(title)
+            self._compare_action_against_human_data(title, 1)
         self._plot_learning_curve(title)
 
     """All the following functions are plotting functions
@@ -186,6 +191,8 @@ class Analysis:
             else:
                 chart += scale_color_brewer(type='qual', palette="Set1")
             chart.save(file_name)
+            plt.cla()
+            plt.close()
 
     def _kl_divergence_against_performance(self, kl_div_list, filename, title):
         KL_DIV = 'KL-divergence'
@@ -230,7 +237,6 @@ class Analysis:
             feature_index_seq = feature_series_func('dummy_var')
             if USE_SELECTED_SUBJECTS:
                 subject_remove_list = SUBJECTS_TO_PLOT + list(filter(lambda x: not x in SUBJECTS_TO_PLOT, list(range(total_subjects))))
-                num_subjects  = len(SUBJECTS_TO_PLOT)
                 feature_index_seq = [SUBJECTS_TO_PLOT_LABEL[SUBJECTS_TO_PLOT.index(index)] for index in feature_index_seq]
             else:
                 kl_divergence = []
@@ -261,8 +267,8 @@ class Analysis:
             analyse_df = pd.DataFrame()
             analyse_df['t-SNE-1'] = sorted_tsne_res[:,0]
             analyse_df['t-SNE-2'] = sorted_tsne_res[:,1]
-            assert analyse_df.shape[0] == (tail_subjects + head_subjects) * num_sequences
             if tail_subjects is not None:
+                assert analyse_df.shape[0] == (tail_subjects + head_subjects) * num_sequences
                 analyse_df[feature_label] = feature_index_seq # numerical
                 analyse_df.plot(kind='scatter', x='t-SNE-1', y='t-SNE-2', c=feature_label,
                                 title=full_title, colormap='jet', alpha=0.8)
@@ -270,7 +276,7 @@ class Analysis:
             else:
                 analyse_df[feature_label] = list(map(str, feature_index_seq)) # discrete
                 self._scatter_plot(analyse_df, 't-SNE-1', 't-SNE-2', full_title, file_name(full_title), feature_label, discrete_label=True,
-                              num_discrete_val=num_subjects)
+                                   num_discrete_val=head_subjects)
 
         # generate feature on selected episodes
         if in_selected_episodes:
@@ -342,6 +348,29 @@ class Analysis:
                                  tail_subjects=NUMBER_OF_TAIL_SUBJECTS, num_sequences=SAMPLE_ACTION_SEQUENCES, 
                                  feature_label='Subject ID' if not HEAD_AND_TAIL_SUBJECTS else 'Negative Log Likelihood Performance', 
                                  in_all_episodes=False, in_selected_episodes=False, simple_analysis=True)
+
+    def _compare_action_against_performance(self, title):
+        if not ACTION_COMPARE:
+            return
+        performance_series = self.human_data_df['Performance'] # t-SNE color
+        sample_df = pd.DataFrame(columns=['trial_' + str(trial_num) for trial_num in range(self.trial_separation)]) # t-SNE raw data
+        for subject_index, (detail_df, data_df) in enumerate(zip(self.current_detail, self.current_data)):
+            # find out the episode with highest score after half way of the training
+            episode_ind = data_df['ctrl_reward'].loc[0.5 * len(data_df):].idxmax()
+            # extract corresponding action sequence
+            action_seq = list(map(int, (detail_df['action'])[episode_ind * self.trial_separation : 
+                                                            (episode_ind + 1) * self.trial_separation].tolist()))
+            # append to sample_df
+            sample_df.loc[subject_index] = action_seq
+        # run t-SNE
+        best_action_tsne = TSNE(n_components=2)
+        best_action_tsne_res = best_action_tsne.fit_transform(sample_df)
+        plt.scatter(best_action_tsne_res[:,0], best_action_tsne_res[:,1], c=performance_series, alpha=0.8, cmap='rainbow')
+        plt.xlabel('t-SNE 1')
+        plt.ylabel('t-SNE 2')
+        plt.title(title + ' t-SNE Best Action Sequence With Colored Performance')
+        plt.colorbar(label='Negative Log Likelihood Performance')
+        save_plt_figure(self.file_name(title + ' Graident action t-SNE plot'))
         
     def _compare_score_against_human_data(self, title):
         if not SOCRE_COMPARE:
@@ -399,24 +428,53 @@ class Analysis:
             plt.xlabel('Episode')
             plt.ylabel('Reward')
             if CONFIDENCE_INTERVAL:
-                mstd = ctrl_reward_series.rolling(smooth_val).std()
+                standard_error = ctrl_reward_series.rolling(smooth_val).apply(lambda a: sem(a), raw=True)
                 plt.title(title + ' Learning curve 95% confidence interval')
-                plt.fill_between(mstd.index, ma - 1.96 * mstd, ma + 1.96 * mstd, alpha=0.2)
-            else:
+                plt.fill_between(standard_error.index, ma - 1.96 * standard_error, ma + 1.96 * standard_error, alpha=0.2)
+            else: # IQR
                 mmin = ctrl_reward_series.rolling(smooth_val).apply(lambda a: np.quantile(a, 0.25), raw=True)
                 mmax = ctrl_reward_series.rolling(smooth_val).apply(lambda a: np.quantile(a, 0.75), raw=True)
                 plt.title(title + ' Learning curve interquartile range')
                 plt.fill_between(mmin.index, mmin, mmax, alpha=0.2)
             # draw a circle around the episode point
             episode_index = 0.95 * len(data_df) # select the episode at 95% position, should be well-trained
-            one_episode_df = detail_df.loc[episode_index * self.trial_separation : 
-                                          (episode_index + 1) * self.trial_separation - 1].reset_index(drop=True)
             plt.scatter(episode_index, ma[episode_index], s=80, linewidths=3, facecolors='none', edgecolors='orange')
+            one_episode_df = detail_df.loc[episode_index * self.trial_separation :
+                                          (episode_index + 1) * self.trial_separation - 1].reset_index(drop=True)
             # plot an episode at well-trained control RL
             episode_plot_axe = plt.axes([.55, .15, .3, .2])
-            one_episode_df.plot(y='spe', ax=episode_plot_axe)
+            episode_plot_axe_sy = episode_plot_axe.twinx()
+            if SMOOTHED_EPISODE:
+                rpe_lst = [[] for _ in range(self.trial_separation)]
+                spe_lst = [[] for _ in range(self.trial_separation)]
+                for row_ind, row in detail_df.loc[(episode_index - EPISODE_SMOOTH_WINDOW) * self.trial_separation :
+                                                   episode_index * self.trial_separation - 1].iterrows():
+                    rpe_lst[row_ind % self.trial_separation].append(row['rpe'])
+                    spe_lst[row_ind % self.trial_separation].append(row['spe'])
+                rpe_mean = pd.Series(data=list(map(lambda rpes: sum(rpes) / len(rpes), rpe_lst)))
+                spe_mean = pd.Series(data=list(map(lambda spes: sum(spes) / len(spes), spe_lst)))
+                one_episode_df['rpe'] = rpe_mean
+                one_episode_df['spe'] = spe_mean
+                if CONFIDENCE_INTERVAL:
+                    rpe_sem = pd.Series(data=list(map(lambda a: sem(a), rpe_lst)))
+                    spe_sem = pd.Series(data=list(map(lambda a: sem(a), spe_lst)))
+                    episode_plot_axe.fill_between(one_episode_df.index, spe_mean - 1.96 * spe_sem, spe_mean + 1.96 * spe_sem, alpha=0.2)
+                    episode_plot_axe_sy.fill_between(one_episode_df.index, rpe_mean - 1.96 * rpe_sem, rpe_mean + 1.96 * rpe_sem,
+                                                     alpha=0.2, color='orange')
+                else: # IQR
+                    rpe_min = list(map(lambda a: np.quantile(a, 0.25), rpe_lst))
+                    rpe_max = list(map(lambda a: np.quantile(a, 0.75), rpe_lst))
+                    spe_min = list(map(lambda a: np.quantile(a, 0.25), spe_lst))
+                    spe_max = list(map(lambda a: np.quantile(a, 0.75), spe_lst))
+                    episode_plot_axe.fill_between(one_episode_df.index, spe_min, spe_max, alpha=0.2)
+                    episode_plot_axe_sy.fill_between(one_episode_df.index, rpe_min, rpe_max, alpha=0.2, color='orange')
+            episode_plot_axe.plot(one_episode_df['spe'])
             episode_plot_axe.set_xlabel('Trials')
-            one_episode_df.plot(y='rpe', ax=episode_plot_axe, secondary_y=True)
+            episode_plot_axe.legend(['SPE'], loc='upper left')
+            episode_plot_axe_sy.plot(one_episode_df['rpe'], color='orange')
+            episode_plot_axe.set_ylim(0, 1)
+            episode_plot_axe_sy.set_ylim(0, 40)
+            episode_plot_axe_sy.legend(['RPE'], loc='upper right')
             action_series = one_episode_df['action']
             episode_plot_axe.set_xticks(np.arange(0, self.trial_separation, 1))
             # annotate x-axis with action number

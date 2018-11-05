@@ -41,6 +41,7 @@ Analysis control parameters:
     --to-excel [subject id]                       Generate a excel file for specific subject with detail sequence of data
     --disable-action-compare                      Use actions as feature space
     --enable-score-compare                        Use score as feature space
+    --human-data-compare                          Enable comparison against the full columns of human data
     --use-selected-subjects                       Use selected subjects, defualt is min 25 50 75 max five subjects
     --head-tail-subjects                          Use head and tail subjects to emphasize the difference
 """
@@ -71,7 +72,7 @@ if __name__ == '__main__':
     short_opt = "hdn:"
     long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode", "enable-static-control",
                  "disable-c-ext", "disable-detail-plot", "less-control-input", "re-analysis=", "PCA-plot", "learning-curve-plot", "use-confidence-interval",
-                 "to-excel=", "disable-action-compare", "enable-score-compare", "use-selected-subjects", "save-ctrl-rl", "head-tail-subjects"]
+                 "to-excel=", "disable-action-compare", "enable-score-compare", "use-selected-subjects", "save-ctrl-rl", "head-tail-subjects", "human-data-compare"]
     try:
         opts, args = getopt.getopt(sys.argv[1:], short_opt, long_opt)
     except getopt.GetoptError as err:
@@ -120,6 +121,8 @@ if __name__ == '__main__':
             analysis.ACTION_COMPARE = False
         elif o == "--enable-score-compare":
             analysis.SOCRE_COMPARE = True
+        elif o == "--human-data-compare":
+            analysis.HUMAN_DATA_COMPARE = True
         elif o == "--use-selected-subjects":
             analysis.USE_SELECTED_SUBJECTS = True
         elif o == "--head-tail-subjects":
