@@ -24,6 +24,7 @@ from common import makedir
 
 TRIAL_SEPARATION = 80
 PLOT_LEARNING_CURVE = False
+LEARNING_CURVE_AUTO_MAX = True
 CONFIDENCE_INTERVAL = False
 SMOOTHED_EPISODE = True
 EPISODE_SMOOTH_WINDOW = 50
@@ -137,6 +138,14 @@ class Analysis:
 
     def add_human_data(self, human_data):
         self.human_data_df.loc[len(self.current_data)] = human_data
+
+    def sequence_to_excel(self, subject_id, column='action'):
+        excel_writer = pd.ExcelWriter(self.file_name(column + ' sequence' + ' subject-id ' + str(subject_id)) + '.xlsx')
+        sequence_df = pd.DataFrame()
+        for mode, subject_list in self.detail.items():
+            sequence_df[mode] = (subject_list[subject_id])[column]
+        sequence_df.to_excel(excel_writer)
+        excel_writer.save()
 
     """This is the entry point when using --re-analysis option
 
@@ -406,14 +415,6 @@ class Analysis:
         cca_trace_df.plot(figsize=FIG_SIZE, grid=True, title='CCA progression summary '+title)
         save_plt_figure(file_name('CCA progression summary ' + title))
 
-    def sequence_to_excel(self, subject_id, column='action'):
-        excel_writer = pd.ExcelWriter(self.file_name(column + ' sequence' + ' subject-id ' + str(subject_id)) + '.xlsx')
-        sequence_df = pd.DataFrame()
-        for mode, subject_list in self.detail.items():
-            sequence_df[mode] = (subject_list[subject_id])[column]
-        sequence_df.to_excel(excel_writer)
-        excel_writer.save()
-
     def _plot_learning_curve(self, title): # plot smooth learning curve
         if not PLOT_LEARNING_CURVE:
             return
@@ -472,8 +473,12 @@ class Analysis:
             episode_plot_axe.set_xlabel('Trials')
             episode_plot_axe.legend(['SPE'], loc='upper left')
             episode_plot_axe_sy.plot(one_episode_df['rpe'], color='orange')
-            episode_plot_axe.set_ylim(0, 1)
-            episode_plot_axe_sy.set_ylim(0, 40)
+            if LEARNING_CURVE_AUTO_MAX:
+                episode_plot_axe.set_ylim(bottom=0)
+                episode_plot_axe_sy.set_ylim(bottom=0)
+            else:
+                episode_plot_axe.set_ylim(0, 1)
+                episode_plot_axe_sy.set_ylim(0, 40)
             episode_plot_axe_sy.legend(['RPE'], loc='upper right')
             action_series = one_episode_df['action']
             episode_plot_axe.set_xticks(np.arange(0, self.trial_separation, 1))

@@ -14,35 +14,65 @@ Model-free, model-based learning simulation
 
 Usage:
 
-Running control parameters:
+Simulation control parameters:
+
     -d load parameters from csv file, default is regdata.csv
+
     -n [number of parameters entries to simulate]
-    --episodes [num episodes]                     
+
+    --episodes [num episodes]
+
     --trials [num trials per episodes]
+
     --set-param-file [parameter file]             Specify the parameter csv file to load
+
     --mdp-stages [MDP environment stages]         Specify how many stages in MDP environment
+
     --ctrl-mode <min-spe/max-spe/min-rpe/max-rpe/min-mf-rel/max-mf-rel/min-mb-rel/max-mb-rel> 
                                                   Choose control agent mode
+
+    --legacy-mode                                 Use legacy MDP environment, which treats one type of terminal reward as one
+                                                  state. Since C++ ext is not implemented for this type of environment, legacy
+                                                  pure Python implemenation for FORWARD will be use.
+
     --disable-control                             Disable control agents
+
     --all-mode                                    Execute all control mode
+
     --enable-static-control                       Use static control instead of DDQN control
+
     --disable-detail-plot                         Disable plot for each simulation
+
     --disable-c-ext                               Disable using C extension
+
     --less-control-input                          Less environment input for control agent
+
     --save-ctrl-rl                                Save control RL agent object for further use
 
 Analysis control parameters:
+
     --re-analysis [analysis object pickle file]   Re-run analysis functions
+
     --PCA-plot                                    Generate plot against PCA results. Not set by default because
                                                   previous PCA run shows MB preference gives 99% variance, so comparing 
                                                   against MB preference is good enough, instead of some principal component
+
     --learning-curve-plot                         Plot learning curves
+
     --use-confidence-interval                     When plot with error bar, use confidence interval instead of IQR
+
+    --disable-auto-max                            Use fix max value on y axis when plotting learning curve in one episode     
+
     --to-excel [subject id]                       Generate a excel file for specific subject with detail sequence of data
+
     --disable-action-compare                      Use actions as feature space
+
     --enable-score-compare                        Use score as feature space
+
     --human-data-compare                          Enable comparison against the full columns of human data
+
     --use-selected-subjects                       Use selected subjects, defualt is min 25 50 75 max five subjects
+
     --head-tail-subjects                          Use head and tail subjects to emphasize the difference
 """
 
@@ -72,7 +102,8 @@ if __name__ == '__main__':
     short_opt = "hdn:"
     long_opt  = ["help", "mdp-stages=", "disable-control", "ctrl-mode=", "set-param-file=", "trials=", "episodes=", "all-mode", "enable-static-control",
                  "disable-c-ext", "disable-detail-plot", "less-control-input", "re-analysis=", "PCA-plot", "learning-curve-plot", "use-confidence-interval",
-                 "to-excel=", "disable-action-compare", "enable-score-compare", "use-selected-subjects", "save-ctrl-rl", "head-tail-subjects", "human-data-compare"]
+                 "to-excel=", "disable-action-compare", "enable-score-compare", "use-selected-subjects", "save-ctrl-rl", "head-tail-subjects", 
+                 "human-data-compare", "disable-auto-max", "legacy-mode"]
     try:
         opts, args = getopt.getopt(sys.argv[1:], short_opt, long_opt)
     except getopt.GetoptError as err:
@@ -105,6 +136,9 @@ if __name__ == '__main__':
             sim.STATIC_CONTROL_AGENT = True
         elif o == "--disable-c-ext":
             sim.DISABLE_C_EXTENSION = True
+        elif o == "--legacy-mode":
+            sim.DISABLE_C_EXTENSION = True
+            sim.LEGACY_MODE = True
         elif o == "--disable-detail-plot":
             sim.ENABLE_PLOT = False
         elif o == "--less-control-input":
@@ -117,6 +151,8 @@ if __name__ == '__main__':
             analysis.PLOT_LEARNING_CURVE = True
         elif o == "--use-confidence-interval":
             analysis.CONFIDENCE_INTERVAL = True
+        elif o == "--disable-auto-max":
+            analysis.LEARNING_CURVE_AUTO_MAX = False
         elif o == "--disable-action-compare":
             analysis.ACTION_COMPARE = False
         elif o == "--enable-score-compare":

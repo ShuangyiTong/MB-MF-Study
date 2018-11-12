@@ -106,7 +106,7 @@ public:
     }
     _Q_values = new double*[_output_offset];
     for (int state = 0; state < _output_offset; ++state) {
-      _Q_values[state]   = new double[_num_actions];
+      _Q_values[state]   = new double[_num_actions]();
     }
     _num_children = _num_actions * _num_trans_prob;
   }

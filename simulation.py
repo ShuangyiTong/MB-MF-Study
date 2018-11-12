@@ -37,6 +37,7 @@ ACTION_PERIOD         = 3
 STATIC_CONTROL_AGENT  = False
 ENABLE_PLOT           = True
 DISABLE_C_EXTENSION   = False
+LEGACY_MODE           = False
 MORE_CONTROL_INPUT    = True
 SAVE_CTRL_RL          = False
 
@@ -98,11 +99,11 @@ def compute_human_action(arbitrator, human_obs, model_free, model_based):
 def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=AssocRelEstimator.LEARNING_RATE,
                amp_mb_to_mf=Arbitrator.AMPLITUDE_MB_TO_MF, amp_mf_to_mb=Arbitrator.AMPLITUDE_MF_TO_MB,
                temperature=Arbitrator.SOFTMAX_TEMPERATURE, rl_learning_rate=SARSA.LEARNING_RATE, performance=300, PARAMETER_SET='DEFAULT'):
-    env     = MDP(MDP_STAGES, more_control_input=MORE_CONTROL_INPUT)
+    env     = MDP(MDP_STAGES, more_control_input=MORE_CONTROL_INPUT, legacy_mode=LEGACY_MODE)
     ddqn    = DoubleDQN(env.observation_space[MDP.CONTROL_AGENT_INDEX],
                         env.action_space[MDP.CONTROL_AGENT_INDEX],
                         torch.cuda.is_available()) # use DDQN for control agent
-    arb     = Arbitrator(AssocRelEstimator(estimator_learning_rate, MDP.POSSIBLE_OUTPUTS[-1]),
+    arb     = Arbitrator(AssocRelEstimator(estimator_learning_rate, env.max_rpe),
                          BayesRelEstimator(thereshold=threshold),
                          amp_mb_to_mf=amp_mb_to_mf, amp_mf_to_mb=amp_mf_to_mb)
 
@@ -184,9 +185,9 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
                       list(map(lambda x: x / TRIALS_PER_EPISODE, 
                                [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_reward, cum_score] + 
                                list(cum_ctrl_act))))
-
-    makedir(RESULTS_FOLDER + 'ControlRL/' + CONTROL_MODE)
+                               
     if SAVE_CTRL_RL:
+        makedir(RESULTS_FOLDER + 'ControlRL/' + CONTROL_MODE)
         torch.save(ddqn.eval_Q.state_dict(), gData.file_name('ControlRL/' + CONTROL_MODE + '/MLP_OBJ_'))
     if ENABLE_PLOT:
         gData.plot_all_human_param(CONTROL_MODE + ' Human Agent State - parameter set: ' + PARAMETER_SET)

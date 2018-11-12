@@ -28,10 +28,12 @@ class MDP(gym.Env):
     HUMAN_AGENT_INDEX   = 0
     CONTROL_AGENT_INDEX = 1
 
+    LEGACY_MODE           = False
     STAGES                = 2
     TRANSITON_PROBABILITY = [0.9, 0.1]
     NUM_ACTIONS           = 2
     POSSIBLE_OUTPUTS      = [0, 10, 20, 40]
+    BIAS_TOGGLE_INCREMENT = 40
 
     """Control Agent Action Space
     0 - doing nothing
@@ -43,7 +45,7 @@ class MDP(gym.Env):
     NUM_CONTROL_ACTION    = 5
 
     def __init__(self, stages=STAGES, trans_prob=TRANSITON_PROBABILITY, num_actions=NUM_ACTIONS,
-                 outputs=POSSIBLE_OUTPUTS, more_control_input=True):
+                 outputs=POSSIBLE_OUTPUTS, more_control_input=True, legacy_mode=LEGACY_MODE):
         """
         Args:
             stages (int): stages of the MDP
@@ -53,10 +55,17 @@ class MDP(gym.Env):
                 by the size of trans_prob
             outputs (list): an array specifying possible outputs
             more_control_input (bool): more element in control observation
+            legacy_mode (bool): if use legacy implementation of MDP
         """
         # environment global variables
         self.stages            = stages
         self.human_state       = 0 # start from zero
+        self.legacy_mode       = legacy_mode
+        if self.legacy_mode:
+            self.max_rpe       = outputs[-1] + MDP.BIAS_TOGGLE_INCREMENT
+            self.toggle_bit    = 0
+        else:
+            self.max_rpe       = outputs[-1]
 
         # human agent variables
         self.action_space      = [spaces.Discrete(num_actions)] # human agent action space
@@ -67,7 +76,10 @@ class MDP(gym.Env):
         self.output_states = choice(outputs, self.num_output_states)
         self.output_states_offset = int((pow(self.possible_actions, self.stages) - 1)
             / (self.possible_actions - 1)) # geometric series summation
-        self.num_states        = self.output_states_offset + self.num_output_states
+        if self.legacy_mode:
+            self.num_states    = self.output_states_offset + len(self.outputs)
+        else:
+            self.num_states    = self.output_states_offset + self.num_output_states
         self.observation_space = [spaces.Discrete(self.num_states)] # human agent can see states only
         self.state_reward_func = self._make_state_reward_func()
 
@@ -75,8 +87,12 @@ class MDP(gym.Env):
         self.more_control_input = more_control_input
         self.action_space.append(spaces.Discrete(MDP.NUM_CONTROL_ACTION)) # control agent action space
         if more_control_input:
+            if legacy_mode:
+                output_structure = spaces.Discrete(1) # one toggle bit
+            else:
+                output_structure = spaces.Discrete(self.num_output_states) # output states
             self.observation_space.append(spaces.Tuple((
-                spaces.Discrete(self.num_output_states), # output states
+                output_structure, # depends on if it is legacy mode or 
                 spaces.Box(low=0, high=1, shape=(num_actions,), dtype=float), # transition probability 
                 spaces.Box(low=0, high=1, shape=(1,), dtype=float), # rpe
                 spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float)))) # spe
@@ -84,7 +100,6 @@ class MDP(gym.Env):
             self.observation_space.append(spaces.Tuple((
                 spaces.Box(low=0, high=1, shape=(1,), dtype=float), # rpe
                 spaces.Box(low=0, high=np.inf, shape=(1,), dtype=float)))) # spe
-            
 
         # for reset reference
         self.trans_prob_reset = trans_prob
@@ -98,7 +113,10 @@ class MDP(gym.Env):
 
     def _make_control_observation(self):
         if self.more_control_input:
-            return np.concatenate([self.output_states, np.array(self.trans_prob)])
+            if self.legacy_mode:
+                return np.concatenate([[self.toggle_bit], np.array(self.trans_prob)])
+            else:
+                return np.concatenate([self.output_states, np.array(self.trans_prob)])
         else:
             return []
 
@@ -129,11 +147,14 @@ class MDP(gym.Env):
                     choice(range(action[1] * len(self.trans_prob) + 1, (action[1] + 1) * len(self.trans_prob) + 1),
                            1, True, self.trans_prob)[0]
             reward = self.state_reward_func(state)
+            self.human_state = state
             if state < self.output_states_offset:
                 done = False
             else:
                 done = True
-            self.human_state = state
+                if self.legacy_mode:
+                    self.human_state = self.output_states_offset + self.outputs.index(reward)
+                    reward += MDP.BIAS_TOGGLE_INCREMENT if self.toggle_bit else 0
             return self.human_state, reward, done, self._make_control_observation()
         elif action[0] == MDP.CONTROL_AGENT_INDEX:
             """ Control action
