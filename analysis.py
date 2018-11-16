@@ -21,10 +21,14 @@ from mdp import MDP
 from tqdm import tqdm
 from ggplot import * # ggplot style seems better in discrete scatter plot
 from common import makedir
+from math import ceil
+from scipy.interpolate import pchip_interpolate
 
 TRIAL_SEPARATION = 80
 PLOT_LEARNING_CURVE = False
+MERGE_LEARNING_CURVE = True
 LEARNING_CURVE_AUTO_MAX = True
+BEST_EPISODE = True
 CONFIDENCE_INTERVAL = False
 SMOOTHED_EPISODE = True
 EPISODE_SMOOTH_WINDOW = 50
@@ -46,15 +50,16 @@ DETAIL_COLUMNS = ['rpe', 'spe', 'mf_rel', 'mb_rel', 'p_mb', 'ctrl_reward', 'scor
 COLUMNS = ['rpe', 'spe', 'mf_rel', 'mb_rel', 'p_mb', 'ctrl_reward', 'score'] + ACTION_COLUMN
 PCA_COMPONENTS = 2
 ANALYSIS_EXTRA_COLUMNS = ['score', 'rpe', 'spe', 'p_mb']
+MODE_IDENTIFIER = 'Transferred Control'
 MODE_MAP = {
-    'min-spe' : ['spe', None],
-    'max-spe' : ['spe', None],
-    'min-rpe' : ['rpe', None],
-    'max-rpe' : ['rpe', None],
-    'min-rpe-min-spe' : ['spe', 'rpe'],
-    'max-rpe-max-spe' : ['spe', 'rpe'],
-    'max-rpe-min-spe' : ['spe', 'rpe'],
-    'min-rpe-max-spe' : ['spe', 'rpe']
+    'min-spe' : ['spe', None, 'red'],
+    'max-spe' : ['spe', None, 'mediumseagreen'],
+    'min-rpe' : ['rpe', None, 'royalblue'],
+    'max-rpe' : ['rpe', None, 'plum'],
+    'min-rpe-min-spe' : ['spe', 'rpe', 'tomato'],
+    'max-rpe-max-spe' : ['spe', 'rpe', 'dodgerblue'],
+    'max-rpe-min-spe' : ['spe', 'rpe', 'y'],
+    'min-rpe-max-spe' : ['spe', 'rpe', 'mediumvioletred']
 }
 RESULTS_FOLDER = 'history_results/' + '{:%Y-%m-%d}'.format(datetime.datetime.now()) + '/' + '{:%Y-%m-%d-%H-%M-%S}'.format(datetime.datetime.now()) + '/'
 
@@ -158,6 +163,21 @@ class Analysis:
             self._compare_score_against_human_data(title)
             self._compare_action_against_human_data(title, 1)
         self._plot_learning_curve(title)
+
+    def cross_mode_summary(self, mode_lst=[mode for mode, _ in MODE_MAP.items()], subject_lst=None, subject_info=None):
+        makedir(RESULTS_FOLDER)
+        if subject_lst is not None:
+            MODE_MAP[MODE_IDENTIFIER] = [None, None, 'black']
+        self._plot_p_mb(mode_lst, subject_lst, subject_info)
+
+    def get_optimal_control_sequence(self, mode, subject_id):
+        data_df_lst = self.data[mode]
+        data_df = data_df_lst[subject_id]
+        detail_df_lst = self.detail[mode]
+        detail_df = detail_df_lst[subject_id]
+        episode_index = data_df['ctrl_reward'].loc[0.5 * len(data_df):].rolling(EPISODE_SMOOTH_WINDOW).mean().idxmax()
+        return pd.to_numeric(detail_df['action'].loc[episode_index * self.trial_separation :
+                                                    (episode_index + 1) * self.trial_separation - 1], downcast='integer').tolist()
 
     """All the following functions are plotting functions
 
@@ -415,6 +435,20 @@ class Analysis:
         cca_trace_df.plot(figsize=FIG_SIZE, grid=True, title='CCA progression summary '+title)
         save_plt_figure(file_name('CCA progression summary ' + title))
 
+    def plot_transfer_compare_learning_curve(self, mode, subject_id, subject_id_of_sequence):
+        data_df = self.data[mode][subject_id]
+        detail_df = self.detail[mode][subject_id]
+        target_val = MODE_MAP[mode][0]
+        episode_index = data_df['ctrl_reward'].loc[0.5 * len(data_df):].rolling(EPISODE_SMOOTH_WINDOW).mean().idxmax()
+        original_series = detail_df[target_val].loc[episode_index * self.trial_separation :
+                                       (episode_index + 1) * self.trial_separation - 1].copy().tolist()
+        plt.plot(original_series, label='Original PE', color=MODE_MAP[mode][2])
+        new_series = self.detail[MODE_IDENTIFIER][0][target_val].loc[0:self.trial_separation - 1].copy().tolist()
+        plt.plot(new_series, label='PE with Transferred Ctrl', color='black')
+        plt.title(mode + ' ' + str(subject_id_of_sequence) + ' applied to ' + str(subject_id) + ' transferred curve')
+        plt.legend(loc='best')
+        save_plt_figure(self.file_name(mode + ' ' + str(subject_id_of_sequence) + ' applied to ' + str(subject_id) + ' transferred curve'))
+
     def _plot_learning_curve(self, title): # plot smooth learning curve
         if not PLOT_LEARNING_CURVE:
             return
@@ -437,13 +471,22 @@ class Analysis:
                 mmax = ctrl_reward_series.rolling(smooth_val).apply(lambda a: np.quantile(a, 0.75), raw=True)
                 plt.title(title + ' Learning curve interquartile range')
                 plt.fill_between(mmin.index, mmin, mmax, alpha=0.2)
-            # draw a circle around the episode point
-            episode_index = 0.95 * len(data_df) # select the episode at 95% position, should be well-trained
-            plt.scatter(episode_index, ma[episode_index], s=80, linewidths=3, facecolors='none', edgecolors='orange')
+            if BEST_EPISODE: # find out the episode with highest score after half way of the training
+                episode_index = data_df['ctrl_reward'].loc[0.5 * len(data_df):].rolling(EPISODE_SMOOTH_WINDOW).mean().idxmax()
+            else: # select the episode at 95% position, should be well-trained
+                episode_index = 0.95 * len(data_df) 
             one_episode_df = detail_df.loc[episode_index * self.trial_separation :
                                           (episode_index + 1) * self.trial_separation - 1].reset_index(drop=True)
             # plot an episode at well-trained control RL
-            episode_plot_axe = plt.axes([.55, .15, .3, .2])
+            if MERGE_LEARNING_CURVE:
+                # draw a circle around the episode point
+                plt.scatter(episode_index, ma[episode_index], s=80, linewidths=3, facecolors='none', edgecolors='orange')
+                episode_plot_axe = plt.axes([.55, .15, .3, .2])
+            else:
+                # save previous learning curve plot
+                save_plt_figure(self.file_name('Learning_curve ' + title + ' parameter set: ' + str(index)))
+                # open a new plot
+                episode_plot_axe = plt.gca()
             episode_plot_axe_sy = episode_plot_axe.twinx()
             if SMOOTHED_EPISODE:
                 rpe_lst = [[] for _ in range(self.trial_separation)]
@@ -482,19 +525,106 @@ class Analysis:
             episode_plot_axe_sy.legend(['RPE'], loc='upper right')
             action_series = one_episode_df['action']
             episode_plot_axe.set_xticks(np.arange(0, self.trial_separation, 1))
-            # annotate x-axis with action number
-            for action_index, action in enumerate(action_series):
-                episode_plot_axe.annotate(str(int(action)), xy=((action_index + 1) / (self.trial_separation + 1), 0.05), 
-                                          xycoords='axes fraction', annotation_clip=False)
-            # annotate on the big picture
-            entire_ax.annotate("", xy=(0.7, 0.35), xycoords='figure fraction', 
-                xytext=(episode_index, ma[episode_index]), textcoords='data',
-                arrowprops=dict(arrowstyle="fancy",
-                                color="orange",
-                                connectionstyle="arc3,rad=0.3",
-                                ),
-                )
-            save_plt_figure(self.file_name('Learning_curve ' + title + ' parameter set: ' + str(index)))
+            if MERGE_LEARNING_CURVE:
+                # annotate x-axis with action number
+                for action_index, action in enumerate(action_series):
+                    episode_plot_axe.annotate(str(int(action)), xy=((action_index + 1) / (self.trial_separation + 1), 0.05), 
+                                            xycoords='axes fraction', annotation_clip=False)
+                # annotate on the big picture
+                entire_ax.annotate("", xy=(0.7, 0.35), xycoords='figure fraction', 
+                    xytext=(episode_index, ma[episode_index]), textcoords='data',
+                    arrowprops=dict(arrowstyle="fancy",
+                                    color="orange",
+                                    connectionstyle="arc3,rad=0.3",
+                                    ),
+                    )
+                save_plt_figure(self.file_name('Learning_curve ' + title + ' parameter set: ' + str(index)))
+            else:
+                plt.title(title + ' 95% confidence interval')
+                save_plt_figure(self.file_name('Episode_curve ' + title + ' parameter set: ' + str(index)))
+
+    def _plot_p_mb(self, mode_lst, subject_lst, subject_info):
+        num_subjects = len(self.current_data)
+        target_mode = mode_lst[-1]
+        discrepancy_lst = []
+        for subject_id in range(num_subjects):
+            ax = plt.gca()
+            if subject_lst is not None:
+                if len(subject_lst) == 0:
+                    break
+                if subject_id != subject_lst[0]:
+                    continue
+                else:
+                    subject_lst.pop(0)
+            iterated = False
+            discrepancy = 0
+            for mode in mode_lst:
+                if subject_lst is not None:
+                    if iterated:
+                        mode_lst.pop(0)
+                        continue
+                    else:
+                        iterated = True
+                data_df = self.data[mode][subject_id]
+                detail_df = self.detail[mode][subject_id]                    
+                if mode == MODE_IDENTIFIER:
+                    episode_index = 0
+                else:
+                    total_episode = len(data_df)
+                    if BEST_EPISODE: # find out the episode with highest score after half way of the training
+                        episode_index = data_df['ctrl_reward'].loc[0.5 * len(data_df):].rolling(EPISODE_SMOOTH_WINDOW).mean().idxmax()
+                    else: # select the episode at 95% position, should be well-trained
+                        episode_index = 0.95 * len(data_df)
+                    if episode_index > total_episode - EPISODE_SMOOTH_WINDOW:
+                        episode_index = total_episode - EPISODE_SMOOTH_WINDOW
+                # discretize the probability space
+                TICK_NAME_NUM = np.linspace(0, 1, self.trial_separation + 1)[:-1]
+                TICK_NAME_STR = [str(x) for x in TICK_NAME_NUM]
+                discrete_prob_df = pd.DataFrame(columns=TICK_NAME_STR)
+                interval_len = 1 / self.trial_separation
+                for sub_index in range(EPISODE_SMOOTH_WINDOW):
+                    discrete_list = np.zeros(self.trial_separation)
+                    for _, row in detail_df.loc[(sub_index + episode_index) * self.trial_separation : 
+                                                (sub_index + 1 + episode_index) * self.trial_separation - 1].iterrows():
+                        category = ceil((1 - row['p_mb']) / interval_len) - 1 # it is suggested to put model-based on the left, hence use 1-p_mb
+                        if category == -1: # boundary condition
+                            category = 0
+                        discrete_list[category] += 1 # count++
+                    discrete_prob_df.loc[sub_index] = discrete_list
+                discrepancy = detail_df['p_mb'].loc[episode_index * self.trial_separation : 
+                                                   (SMOOTHED_EPISODE + episode_index) * self.trial_separation - 1].mean() - discrepancy
+                mean_lst = []
+                sem_lst  = []
+                for tick in TICK_NAME_STR:
+                    mean_lst.append(discrete_prob_df[tick].mean())
+                    sem_lst.append(sem(discrete_prob_df[tick]))
+                mean_lst = list(map(lambda x: x / self.trial_separation, mean_lst))
+                sem_lst = list(map(lambda x: x / self.trial_separation, sem_lst))
+                smooth_x = np.linspace(0, TICK_NAME_NUM[-1], 300)
+                smooth_y = pchip_interpolate(TICK_NAME_NUM, mean_lst, smooth_x)
+                ax.plot(smooth_x, smooth_y, label=mode, color=MODE_MAP[mode][2])
+                ax.set_xlabel(r'Model-based$\longleftarrow$      $\longrightarrow$Model-free')
+                ax.set_ylabel('Frequency')
+                smooth_sem = pd.Series(data=pchip_interpolate(TICK_NAME_NUM, sem_lst, smooth_x))
+                ax.fill_between(smooth_x, smooth_y - 1.96 * smooth_sem, smooth_y + 1.96 * smooth_sem, alpha=0.2, color=MODE_MAP[mode][2])
+                plt.legend(bbox_to_anchor=(1.02, 1), loc="upper left")
+            if subject_lst is None:
+                save_plt_figure(self.file_name('P_MB plot ID: ' + str(subject_id)))
+                discrepancy_lst.append(discrepancy)
+        if subject_lst is None and len(mode_lst) == 2:
+            slope, intercept, r_value, p_value, _ = linregress(self.human_data_df['MB preference'], discrepancy_lst)
+            coefficient = (slope, intercept) # linear coefficient
+            poly_func = np.poly1d(coefficient)
+            fit_line = [poly_func(subject_p_mb) for subject_p_mb in self.human_data_df['MB preference']]
+            plt.scatter(self.human_data_df['MB preference'], discrepancy_lst, marker='x')
+            plt.plot(self.human_data_df['MB preference'], fit_line, label="R Squared: {:.3f}\np-value: {:.3f}".format(r_value**2, p_value), color='orange')
+            plt.legend(loc='best')
+            plt.xlabel('Model-based RL Preference')
+            plt.ylabel('Difference in P_MB mean')
+            plt.title(mode_lst[1] + "'s P_MB mean minus " + mode_lst[0] + "'s")
+            save_plt_figure(self.file_name('P_MB regression with MB Preference'))
+        if subject_lst is not None:
+            save_plt_figure(self.file_name('P_MB plot ' + target_mode + ' ' + str(subject_info[0]) + ' apply on ' + str(subject_info[1])))
 
     def plot_line(self, left_series_names, right_series_names=None, plot_title=None):
         fig, axes = plt.subplots(nrows=2, ncols=1, gridspec_kw = {'height_ratios': [5, 1]})

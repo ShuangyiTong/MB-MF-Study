@@ -3,6 +3,7 @@
 """
 import torch
 import numpy as np
+import pandas as pd
 import dill as pickle # see https://stackoverflow.com/questions/25348532/can-python-pickle-lambda-functions
 
 from tqdm import tqdm
@@ -11,7 +12,7 @@ from ddqn import DoubleDQN
 from sarsa import SARSA
 from forward import FORWARD
 from arbitrator import BayesRelEstimator, AssocRelEstimator, Arbitrator
-from analysis import gData, RESULTS_FOLDER
+from analysis import gData, RESULTS_FOLDER, COLUMNS, DETAIL_COLUMNS
 from common import makedir
 
 # preset constants
@@ -57,15 +58,18 @@ error_reward_map = {
     'max-rpe-min-spe' : lambda x: error_reward_map['max-rpe'](x) and error_reward_map['min-spe'](x)
 }
 
+def create_lst(x):
+    return [x] * TRIALS_PER_EPISODE
+
 static_action_map = {
-    'min-rpe' : 0,
-    'max-rpe' : 3,
-    'min-spe' : 0,
-    'max-spe' : 1,
-    'min-rpe-min-spe' : 0,
-    'max-rpe-max-spe' : 4,
-    'min-rpe-max-spe' : 2,
-    'max-rpe-min-spe' : 3
+    'min-rpe' : create_lst(0),
+    'max-rpe' : create_lst(3),
+    'min-spe' : create_lst(0),
+    'max-spe' : create_lst(1),
+    'min-rpe-min-spe' : create_lst(0),
+    'max-rpe-max-spe' : create_lst(4),
+    'min-rpe-max-spe' : create_lst(2),
+    'max-rpe-min-spe' : create_lst(3)
 }
 
 def error_to_reward(error, mode=DEFAULT_CONTROL_MODE, bias=CONTROL_REWARD_BIAS):
@@ -98,15 +102,15 @@ def compute_human_action(arbitrator, human_obs, model_free, model_based):
 
 def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=AssocRelEstimator.LEARNING_RATE,
                amp_mb_to_mf=Arbitrator.AMPLITUDE_MB_TO_MF, amp_mf_to_mb=Arbitrator.AMPLITUDE_MF_TO_MB,
-               temperature=Arbitrator.SOFTMAX_TEMPERATURE, rl_learning_rate=SARSA.LEARNING_RATE, performance=300, PARAMETER_SET='DEFAULT'):
+               temperature=Arbitrator.SOFTMAX_TEMPERATURE, rl_learning_rate=SARSA.LEARNING_RATE, performance=300, PARAMETER_SET='DEFAULT',
+               return_res=False):
+    if return_res:
+        res_data_df = pd.DataFrame(columns=COLUMNS)
+        res_detail_df = pd.DataFrame(columns=DETAIL_COLUMNS)
     env     = MDP(MDP_STAGES, more_control_input=MORE_CONTROL_INPUT, legacy_mode=LEGACY_MODE)
     ddqn    = DoubleDQN(env.observation_space[MDP.CONTROL_AGENT_INDEX],
                         env.action_space[MDP.CONTROL_AGENT_INDEX],
                         torch.cuda.is_available()) # use DDQN for control agent
-    arb     = Arbitrator(AssocRelEstimator(estimator_learning_rate, env.max_rpe),
-                         BayesRelEstimator(thereshold=threshold),
-                         amp_mb_to_mf=amp_mb_to_mf, amp_mf_to_mb=amp_mf_to_mb)
-
     gData.new_simulation()
     gData.add_human_data([amp_mf_to_mb / amp_mb_to_mf, rl_learning_rate, estimator_learning_rate, threshold, temperature, performance])
     control_obs_extra = INIT_CTRL_INPUT
@@ -116,7 +120,10 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
         forward = FORWARD(env.observation_space[MDP.HUMAN_AGENT_INDEX],
                         env.action_space[MDP.HUMAN_AGENT_INDEX],
                         env.state_reward_func, env.output_states_offset,
-                        learning_rate=rl_learning_rate, disable_cforward=DISABLE_C_EXTENSION) # forward model-based learner
+                            learning_rate=rl_learning_rate, disable_cforward=DISABLE_C_EXTENSION) # forward model-based learner
+        arb     = Arbitrator(AssocRelEstimator(estimator_learning_rate, env.max_rpe),
+                            BayesRelEstimator(thereshold=threshold),
+                            amp_mb_to_mf=amp_mb_to_mf, amp_mf_to_mb=amp_mf_to_mb)
         # register in the communication controller
         env.agent_comm_controller.register('model-based', forward)
         cum_p_mb = cum_mf_rel = cum_mb_rel = cum_rpe = cum_spe = cum_reward = cum_score = 0
@@ -129,7 +136,7 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
 
             """control agent choose action"""
             if STATIC_CONTROL_AGENT:
-                control_action = static_action_map[CONTROL_MODE]
+                control_action = static_action_map[CONTROL_MODE][trial]
             else:
                 control_action = ddqn.action(control_obs)
             cum_ctrl_act[control_action] += 1
@@ -179,13 +186,17 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
             next_control_obs = np.append(next_control_obs_frag, [rpe, spe])
             ddqn.optimize(control_obs, control_action, next_control_obs, t_reward)
             control_obs_extra = [rpe, spe]
-            gData.add_detail_res(trial + TRIALS_PER_EPISODE * episode, 
-                                [rpe, spe, mf_rel, mb_rel, p_mb, t_reward, t_score] + [control_action])
-        gData.add_res(episode, 
-                      list(map(lambda x: x / TRIALS_PER_EPISODE, 
-                               [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_reward, cum_score] + 
-                               list(cum_ctrl_act))))
-                               
+            detail_col = [rpe, spe, mf_rel, mb_rel, p_mb, t_reward, t_score] + [control_action]
+            if not return_res:
+                gData.add_detail_res(trial + TRIALS_PER_EPISODE * episode, detail_col)
+            else:
+                res_detail_df.loc[trial + TRIALS_PER_EPISODE * episode] = detail_col
+        data_col = list(map(lambda x: x / TRIALS_PER_EPISODE, 
+                            [cum_rpe, cum_spe, cum_mf_rel, cum_mb_rel, cum_p_mb, cum_reward, cum_score] + list(cum_ctrl_act)))
+        if not return_res:
+            gData.add_res(episode, data_col)
+        else:
+            res_data_df.loc[episode] = data_col
     if SAVE_CTRL_RL:
         makedir(RESULTS_FOLDER + 'ControlRL/' + CONTROL_MODE)
         torch.save(ddqn.eval_Q.state_dict(), gData.file_name('ControlRL/' + CONTROL_MODE + '/MLP_OBJ_'))
@@ -194,3 +205,5 @@ def simulation(threshold=BayesRelEstimator.THRESHOLD, estimator_learning_rate=As
         gData.plot_pe(CONTROL_MODE, CONTROL_MODE + ' - parameter set: ' + PARAMETER_SET)
         gData.plot_action_effect(CONTROL_MODE, CONTROL_MODE + ' Action Summary - parameter set: ' + PARAMETER_SET)
     gData.complete_simulation()
+    if return_res:
+        return (res_data_df, res_detail_df)

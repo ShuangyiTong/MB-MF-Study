@@ -18,7 +18,7 @@ http://dx.doi.org/10.1016/j.neuron.2013.11.028
 class BayesRelEstimator:
     """Bayesian Reliability Estimation Class
     """
-    MEMORY_SIZE     = 1000
+    MEMORY_SIZE     = 10
     CATEGORIES      = 3
     THRESHOLD       = 0.3
     TARGET_CATEGORY = 0
