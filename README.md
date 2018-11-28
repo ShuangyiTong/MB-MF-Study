@@ -10,6 +10,7 @@ Tested Platform:
 - Python: 3.6.7
 
 Required Python Packages:
+
 | Package Name | Tested Version |
 | ------------ | ------- |
 | [Pytorch](https://pytorch.org/) | 0.4.1 |
