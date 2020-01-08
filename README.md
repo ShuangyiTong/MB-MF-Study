@@ -1,6 +1,6 @@
 # Model-based, model-free Learning Simulator
 
-This project will be presented on RLDM 2019 as a poster. See http://cs.brown.edu/~mlittman/ftp/posterassignments.pdf Poster 1.59.
+This project was presented on RLDM 2019 as a poster. See http://rldm.org/papers/abstracts.pdf Poster Session 1, Poster 61.
 
 ## System requirements and required libraries
 Tested Platform: 
